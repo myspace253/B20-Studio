@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-line;
+  }
+
+  html {
+    scroll-behavior: auto; /* Lenis takes over scroll physics */
+  }
+
+  body {
+    @apply bg-ink text-muted font-body antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display text-white;
+  }
+
+  ::selection {
+    background: theme("colors.base");
+    color: theme("colors.white");
+  }
+
+  /* Visible keyboard focus everywhere — no outline: none without a replacement */
+  :focus-visible {
+    outline: 2px solid theme("colors.signal");
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

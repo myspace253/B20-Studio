@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  wallets   Wallet[]
+  projects  Project[]
+  createdAt DateTime  @default(now())
+}
+
+model Wallet {
+  id      String @id @default(cuid())
+  address String @unique
+  user    User   @relation(fields: [userId], references: [id])
+  userId  String
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  tokens    Token[]
+  createdAt DateTime @default(now())
+}
+
+model Token {
+  id              String       @id @default(cuid())
+  name            String
+  symbol          String
+  variant         String // "asset" | "stablecoin"
+  contractAddress String       @unique
+  decimals        Int
+  initialSupply   String
+  maximumSupply   String?
+  mintable        Boolean      @default(false)
+  burnable        Boolean      @default(false)
+  pausable        Boolean      @default(false)
+  project         Project      @relation(fields: [projectId], references: [id])
+  projectId       String
+  metadata        Metadata?
+  roles           TokenRole[]
+  deployments     Deployment[]
+  transactions    Transaction[]
+  createdAt       DateTime     @default(now())
+}
+
+model Metadata {
+  id          String  @id @default(cuid())
+  token       Token   @relation(fields: [tokenId], references: [id])
+  tokenId     String  @unique
+  description String?
+  website     String?
+  twitter     String?
+  telegram    String?
+  discord     String?
+  logoUrl     String?
+  bannerUrl   String?
+}
+
+model TokenRole {
+  id      String @id @default(cuid())
+  token   Token  @relation(fields: [tokenId], references: [id])
+  tokenId String
+  role    String // owner | admin | mint | burn | freeze | transfer
+  address String
+}
+
+model Deployment {
+  id        String   @id @default(cuid())
+  token     Token    @relation(fields: [tokenId], references: [id])
+  tokenId   String
+  txHash    String
+  network   String // "base-mainnet" | "base-sepolia" | "vibenet"
+  status    String // "pending" | "confirmed" | "failed"
+  createdAt DateTime @default(now())
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  token     Token    @relation(fields: [tokenId], references: [id])
+  tokenId   String
+  type      String // mint | burn | transfer | freeze | role_updated
+  txHash    String
+  from      String?
+  to        String?
+  amount    String?
+  createdAt DateTime @default(now())
+}
