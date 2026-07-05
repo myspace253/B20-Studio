@@ -81,7 +81,7 @@ AI Token Generator / Tokenomics Generator / Audit / Whitepaper features.
 ## Getting started
 
 ```bash
-npm install
+npm install --legacy-peer-deps
 cp .env.example .env
 npm run db:push   # once DATABASE_URL is set
 npm run dev
