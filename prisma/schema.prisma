@@ -9,7 +9,7 @@ datasource db {
 
 model User {
   id        String    @id @default(cuid())
-  email     String    @unique
+  email     String?   @unique
   wallets   Wallet[]
   projects  Project[]
   createdAt DateTime  @default(now())
@@ -32,24 +32,31 @@ model Project {
 }
 
 model Token {
-  id              String       @id @default(cuid())
+  id              String        @id @default(cuid())
   name            String
   symbol          String
   variant         String // "asset" | "stablecoin"
-  contractAddress String       @unique
+  contractAddress String        @unique
   decimals        Int
   initialSupply   String
   maximumSupply   String?
-  mintable        Boolean      @default(false)
-  burnable        Boolean      @default(false)
-  pausable        Boolean      @default(false)
-  project         Project      @relation(fields: [projectId], references: [id])
+  mintable        Boolean       @default(false)
+  burnable        Boolean       @default(false)
+  pausable        Boolean       @default(false)
+  project         Project       @relation(fields: [projectId], references: [id])
   projectId       String
   metadata        Metadata?
+  transferRule    TransferRule?
+  tokenomics      Tokenomics?
   roles           TokenRole[]
+  frozenAddresses FrozenAddress[]
   deployments     Deployment[]
   transactions    Transaction[]
-  createdAt       DateTime     @default(now())
+  createdAt       DateTime      @default(now())
+
+  // A symbol only needs to be unique within a project, not globally —
+  // two different issuers can both ship a "GOLD" token.
+  @@unique([projectId, symbol])
 }
 
 model Metadata {
@@ -71,6 +78,36 @@ model TokenRole {
   tokenId String
   role    String // owner | admin | mint | burn | freeze | transfer
   address String
+}
+
+model TransferRule {
+  id      String  @id @default(cuid())
+  token   Token   @relation(fields: [tokenId], references: [id])
+  tokenId String  @unique
+  type    String // allow_everyone | whitelist_only | blacklist | country_restrictions | kyc_required | max_wallet | max_transaction
+  value   String?
+}
+
+model Tokenomics {
+  id        String @id @default(cuid())
+  token     Token  @relation(fields: [tokenId], references: [id])
+  tokenId   String @unique
+  treasury  Float
+  team      Float
+  community Float
+  liquidity Float
+  airdrop   Float
+  reserve   Float
+}
+
+model FrozenAddress {
+  id        String   @id @default(cuid())
+  token     Token    @relation(fields: [tokenId], references: [id])
+  tokenId   String
+  address   String
+  createdAt DateTime @default(now())
+
+  @@unique([tokenId, address])
 }
 
 model Deployment {

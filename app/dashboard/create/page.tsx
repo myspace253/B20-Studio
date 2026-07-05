@@ -96,13 +96,7 @@ export default function CreateTokenPage() {
     const res = await fetch("/api/create-token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: payload.basicInfo.name,
-        symbol: payload.basicInfo.symbol,
-        variant: payload.supply.variant,
-        initialSupply: payload.supply.initialSupply,
-        decimals: payload.supply.decimals,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {

@@ -3,6 +3,7 @@ import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { SmoothScrollProvider } from "@/components/providers/SmoothScrollProvider";
 import { Web3Provider } from "@/components/providers/Web3Provider";
+import { SessionAuthProvider } from "@/components/providers/SessionAuthProvider";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -36,9 +37,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <body>
-        <Web3Provider>
-          <SmoothScrollProvider>{children}</SmoothScrollProvider>
-        </Web3Provider>
+        <SessionAuthProvider>
+          <Web3Provider>
+            <SmoothScrollProvider>{children}</SmoothScrollProvider>
+          </Web3Provider>
+        </SessionAuthProvider>
       </body>
     </html>
   );

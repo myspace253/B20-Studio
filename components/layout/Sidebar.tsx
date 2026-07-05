@@ -15,17 +15,6 @@ const NAV_SECTIONS = [
     ],
   },
   {
-    label: "Manage",
-    items: [
-      { href: "/dashboard/mint", label: "Mint" },
-      { href: "/dashboard/burn", label: "Burn" },
-      { href: "/dashboard/freeze", label: "Freeze" },
-      { href: "/dashboard/transfer-rules", label: "Transfer rules" },
-      { href: "/dashboard/metadata", label: "Metadata" },
-      { href: "/dashboard/roles", label: "Roles" },
-    ],
-  },
-  {
     label: "Insights",
     items: [
       { href: "/dashboard/analytics", label: "Analytics" },
@@ -56,7 +45,10 @@ export function Sidebar() {
           )}
           <ul className="space-y-0.5">
             {section.items.map((item) => {
-              const active = pathname === item.href;
+              const active =
+                item.href === "/dashboard"
+                  ? pathname === item.href
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <li key={item.href}>
                   <Link
