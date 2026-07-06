@@ -37,6 +37,7 @@ export async function getOwnedToken(tokenId: string) {
       transferRule: true,
       tokenomics: true,
       frozenAddresses: true,
+      deployments: { orderBy: { createdAt: "desc" }, take: 1 },
     },
   });
 }

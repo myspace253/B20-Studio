@@ -1,22 +1,159 @@
-/**
- * B20 is implemented as node-level Rust precompiles, not deployed contracts,
- * so there's no ABI to import in the usual sense — calls go through fixed
- * precompile addresses defined by the Activation Registry.
- *
- * This file intentionally does NOT hard-code a full interface: Base's
- * Standard Library repository is the source of truth for the exact
- * precompile addresses and call encoding, and it may still change before
- * general availability. Wire the real addresses/encoding in here once
- * confirmed against https://docs.base.org/base-chain/specs/upgrades/beryl/b20
- * — do not guess at addresses for a real deployment.
- */
+import { keccak256, toHex } from "viem";
 
+/**
+ * Fixed on every network per Base's docs — the same factory address on
+ * mainnet, Sepolia, and Vibenet.
+ * Source: https://docs.base.org/get-started/launch-b20-token
+ */
+export const B20_FACTORY_ADDRESS =
+  "0xB20f000000000000000000000000000000000000" as const;
+
+/** Source: github.com/base/base-std IActivationRegistry.sol usage in the docs guide. */
 export const ACTIVATION_REGISTRY_ADDRESS =
   "0x8453000000000000000000000000000000000001" as const;
 
-export const B20_VARIANTS = {
-  asset: "asset",
-  stablecoin: "stablecoin",
+/** Matches IB20Factory.B20Variant enum ordering exactly (ASSET = 0, STABLECOIN = 1). */
+export const B20_VARIANT = { asset: 0, stablecoin: 1 } as const;
+
+/**
+ * ActivationRegistry feature ids — keccak256 of the literal strings shown
+ * in Base's docs guide ("Verify the Activation Registry is enabled").
+ */
+export const ACTIVATION_FEATURE_ID = {
+  asset: keccak256(toHex("base.b20_asset")),
+  stablecoin: keccak256(toHex("base.b20_stablecoin")),
 } as const;
 
-export type B20Variant = keyof typeof B20_VARIANTS;
+/**
+ * Role constants from B20Constants.sol — every value is keccak256 of the
+ * literal role name except DEFAULT_ADMIN_ROLE, which is bytes32(0).
+ */
+export const B20_ROLE = {
+  // bytes32(0) — the zero role, per B20Constants.sol.
+  DEFAULT_ADMIN_ROLE: (`0x${"0".repeat(64)}`) as `0x${string}`,
+  MINT_ROLE: keccak256(toHex("MINT_ROLE")),
+  BURN_ROLE: keccak256(toHex("BURN_ROLE")),
+  BURN_BLOCKED_ROLE: keccak256(toHex("BURN_BLOCKED_ROLE")),
+  PAUSE_ROLE: keccak256(toHex("PAUSE_ROLE")),
+  UNPAUSE_ROLE: keccak256(toHex("UNPAUSE_ROLE")),
+  METADATA_ROLE: keccak256(toHex("METADATA_ROLE")),
+  OPERATOR_ROLE: keccak256(toHex("OPERATOR_ROLE")),
+} as const;
+
+/** Policy scopes — also keccak256 of the literal name, per B20Constants.sol. */
+export const B20_POLICY_SCOPE = {
+  TRANSFER_SENDER_POLICY: keccak256(toHex("TRANSFER_SENDER_POLICY")),
+  TRANSFER_RECEIVER_POLICY: keccak256(toHex("TRANSFER_RECEIVER_POLICY")),
+  TRANSFER_EXECUTOR_POLICY: keccak256(toHex("TRANSFER_EXECUTOR_POLICY")),
+  MINT_RECEIVER_POLICY: keccak256(toHex("MINT_RECEIVER_POLICY")),
+} as const;
+
+/** IB20Factory.sol — only the entry points this app calls. */
+export const b20FactoryAbi = [
+  {
+    type: "function",
+    name: "createB20",
+    stateMutability: "payable",
+    inputs: [
+      { name: "variant", type: "uint8" },
+      { name: "salt", type: "bytes32" },
+      { name: "params", type: "bytes" },
+      { name: "initCalls", type: "bytes[]" },
+    ],
+    outputs: [{ name: "token", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "getB20Address",
+    stateMutability: "view",
+    inputs: [
+      { name: "variant", type: "uint8" },
+      { name: "sender", type: "address" },
+      { name: "salt", type: "bytes32" },
+    ],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "isB20",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+/** IB20.sol — only the entry points this app calls on a deployed token. */
+export const b20TokenAbi = [
+  {
+    type: "function",
+    name: "mint",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "burn",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "burnBlocked",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "grantRole",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "role", type: "bytes32" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "updateSupplyCap",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newSupplyCap", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "updatePolicy",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "policyScope", type: "bytes32" },
+      { name: "newPolicyId", type: "uint64" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
+/** IActivationRegistry.sol */
+export const activationRegistryAbi = [
+  {
+    type: "function",
+    name: "isActivated",
+    stateMutability: "view",
+    inputs: [{ name: "feature", type: "bytes32" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;

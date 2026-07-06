@@ -37,6 +37,7 @@ model Token {
   symbol          String
   variant         String // "asset" | "stablecoin"
   contractAddress String        @unique
+  network         String        @default("base-sepolia") // "base-mainnet" | "base-sepolia"
   decimals        Int
   initialSupply   String
   maximumSupply   String?

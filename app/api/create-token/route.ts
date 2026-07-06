@@ -3,8 +3,8 @@ import { z } from "zod";
 import { isAddress } from "viem";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { deployB20Token } from "@/services/b20";
-import type { CreateTokenDraft } from "@/types/token";
+import { verifyB20Deployment } from "@/lib/verifyDeployment";
+import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 
 const roleSchema = z.object({
   role: z.enum(["owner", "admin", "mint", "burn", "freeze", "transfer"]),
@@ -25,7 +25,8 @@ const createTokenSchema = z.object({
     variant: z.enum(["asset", "stablecoin"]),
     initialSupply: z.string().regex(/^[0-9]+$/),
     maximumSupply: z.string().regex(/^[0-9]+$/).optional(),
-    decimals: z.number().int().min(0).max(18),
+    decimals: z.number().int().min(6).max(18),
+    currency: z.string().regex(/^[A-Z]+$/).optional(),
     mintable: z.boolean(),
     burnable: z.boolean(),
     pausable: z.boolean(),
@@ -51,6 +52,16 @@ const createTokenSchema = z.object({
     airdrop: z.number().min(0).max(100),
     reserve: z.number().min(0).max(100),
   }),
+  // The wallet already signed and paid gas for this — see StepReview.tsx.
+  // This route never sends a transaction itself.
+  deployResult: z.object({
+    contractAddress: z.string().refine((v) => isAddress(v)),
+    txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+    gasUsed: z.string(),
+    effectiveGasPriceGwei: z.string(),
+    totalCostEth: z.string(),
+    network: z.enum(["base-mainnet", "base-sepolia"]),
+  }),
 });
 
 export async function POST(req: NextRequest) {
@@ -63,6 +74,9 @@ export async function POST(req: NextRequest) {
       { status: 401 }
     );
   }
+
+  const limited = rateLimit(`create-token:${address.toLowerCase()}`, 10, 60_000);
+  if (!limited.allowed) return tooManyRequests(limited);
 
   let body: unknown;
   try {
@@ -79,38 +93,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { basicInfo, supply, roles, transferRules, tokenomics } = parsed.data;
-  const normalizedAddress = address.toLowerCase();
+  const { basicInfo, supply, roles, transferRules, tokenomics, deployResult } =
+    parsed.data;
 
-  // Attempt the real on-chain deploy first. This always throws today —
-  // deployB20Token is intentionally unimplemented until the B20 SDK is
-  // confirmed — but it's called for real here so the moment that changes,
-  // a successful call flows straight into a Deployment row and a real
-  // contractAddress below, with no further wiring needed.
-  let deployResult: { txHash: `0x${string}`; contractAddress: `0x${string}` } | null =
-    null;
-  try {
-    const draft: CreateTokenDraft = {
-      basicInfo: {
-        name: basicInfo.name,
-        symbol: basicInfo.symbol,
-        description: basicInfo.description || "",
-        website: basicInfo.website || undefined,
-        twitter: basicInfo.twitter || undefined,
-        telegram: basicInfo.telegram || undefined,
-        discord: basicInfo.discord || undefined,
-      },
-      supply,
-      roles,
-      transferRules,
-      tokenomics,
-    };
-    deployResult = await deployB20Token(draft, "base-sepolia");
-  } catch {
-    // Expected for now — see comment above. Fall through to draft-save.
+  // Never trust a client's claim of on-chain success at face value —
+  // independently re-check the transaction against the RPC itself.
+  const verification = await verifyB20Deployment({
+    network: deployResult.network,
+    txHash: deployResult.txHash as `0x${string}`,
+    contractAddress: deployResult.contractAddress as `0x${string}`,
+  });
+
+  if (!verification.ok) {
+    return NextResponse.json(
+      { error: `Could not verify the deployment: ${verification.reason}` },
+      { status: 422 }
+    );
   }
 
   try {
+    const normalizedAddress = address.toLowerCase();
     const symbol = basicInfo.symbol.toUpperCase();
 
     const token = await prisma.token.create({
@@ -118,8 +120,8 @@ export async function POST(req: NextRequest) {
         name: basicInfo.name,
         symbol,
         variant: supply.variant,
-        contractAddress:
-          deployResult?.contractAddress ?? `pending-${crypto.randomUUID()}`,
+        contractAddress: deployResult.contractAddress,
+        network: deployResult.network,
         decimals: supply.decimals,
         initialSupply: supply.initialSupply,
         maximumSupply: supply.maximumSupply,
@@ -128,9 +130,6 @@ export async function POST(req: NextRequest) {
         pausable: supply.pausable,
         project: {
           connectOrCreate: {
-            // One default project per wallet for now — multi-project
-            // support (the doc's "Projects" list) is a later addition once
-            // there's a project-switcher UI to go with it.
             where: { id: `wallet:${normalizedAddress}` },
             create: {
               id: `wallet:${normalizedAddress}`,
@@ -140,7 +139,6 @@ export async function POST(req: NextRequest) {
                   where: { id: normalizedAddress },
                   create: {
                     id: normalizedAddress,
-                    email: `${normalizedAddress}@wallet.local`,
                     wallets: { create: { address: normalizedAddress } },
                   },
                 },
@@ -162,39 +160,30 @@ export async function POST(req: NextRequest) {
         },
         tokenomics: { create: tokenomics },
         roles: { create: roles },
-        ...(deployResult
-          ? {
-              deployments: {
-                create: {
-                  txHash: deployResult.txHash,
-                  network: "base-sepolia",
-                  status: "confirmed",
-                },
-              },
-            }
-          : {}),
+        deployments: {
+          create: {
+            txHash: deployResult.txHash,
+            network: deployResult.network,
+            status: "confirmed",
+          },
+        },
       },
     });
 
     return NextResponse.json(
-      deployResult
-        ? {
-            id: token.id,
-            status: "deployed",
-            contractAddress: token.contractAddress,
-          }
-        : {
-            id: token.id,
-            status: "draft_saved",
-            message:
-              "Draft saved with all wizard data. On-chain deployment is not wired up yet — see services/b20.ts.",
-          },
+      {
+        id: token.id,
+        status: "deployed",
+        contractAddress: token.contractAddress,
+        txHash: deployResult.txHash,
+        gasUsed: deployResult.gasUsed,
+        effectiveGasPriceGwei: deployResult.effectiveGasPriceGwei,
+        totalCostEth: deployResult.totalCostEth,
+      },
       { status: 201 }
     );
   } catch (err) {
-    console.error("Failed to save token", err);
-    // Prisma's unique constraint error code — surface it as a real
-    // validation message instead of a generic 500.
+    console.error("Failed to save deployed token", err);
     if (
       typeof err === "object" &&
       err &&
@@ -207,7 +196,7 @@ export async function POST(req: NextRequest) {
       );
     }
     return NextResponse.json(
-      { error: "Could not save token. Check DATABASE_URL is set and reachable." },
+      { error: "Deployment succeeded on-chain but saving the record failed. Save your transaction hash and contact support." },
       { status: 500 }
     );
   }

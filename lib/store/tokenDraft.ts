@@ -7,6 +7,8 @@ import type {
   TokenomicsAllocation,
 } from "@/types/token";
 
+export type DeployNetwork = "base-mainnet" | "base-sepolia";
+
 interface TokenDraftState {
   step: number;
   basicInfo: TokenBasicInfo | null;
@@ -14,6 +16,7 @@ interface TokenDraftState {
   roles: TokenRoleAssignment[];
   transferRules: TokenTransferRules | null;
   tokenomics: TokenomicsAllocation | null;
+  network: DeployNetwork;
 
   setStep: (step: number) => void;
   setBasicInfo: (values: TokenBasicInfo) => void;
@@ -21,6 +24,7 @@ interface TokenDraftState {
   setRoles: (roles: TokenRoleAssignment[]) => void;
   setTransferRules: (values: TokenTransferRules) => void;
   setTokenomics: (values: TokenomicsAllocation) => void;
+  setNetwork: (network: DeployNetwork) => void;
   reset: () => void;
 }
 
@@ -31,6 +35,7 @@ const initialState = {
   roles: [],
   transferRules: null,
   tokenomics: null,
+  network: "base-sepolia" as DeployNetwork,
 };
 
 /**
@@ -47,5 +52,6 @@ export const useTokenDraftStore = create<TokenDraftState>((set) => ({
   setRoles: (roles) => set({ roles }),
   setTransferRules: (transferRules) => set({ transferRules }),
   setTokenomics: (tokenomics) => set({ tokenomics }),
+  setNetwork: (network) => set({ network }),
   reset: () => set(initialState),
 }));

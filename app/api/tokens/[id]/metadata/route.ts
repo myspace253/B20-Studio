@@ -9,6 +9,8 @@ const metadataSchema = z.object({
   twitter: z.string().url().optional().or(z.literal("")),
   telegram: z.string().url().optional().or(z.literal("")),
   discord: z.string().url().optional().or(z.literal("")),
+  logoUrl: z.string().url().optional().or(z.literal("")),
+  bannerUrl: z.string().url().optional().or(z.literal("")),
 });
 
 export async function PUT(

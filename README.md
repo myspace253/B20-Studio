@@ -122,45 +122,100 @@ address so one wallet can never see or act on another's tokens.
 Set `AUTH_SECRET` before running this for real — generate one with
 `npx auth secret`.
 
+## On-chain deployment — how it actually works now
+
+B20's interface is public (Base shipped it with the Beryl upgrade, June 25,
+2026 — see [docs.base.org](https://docs.base.org/get-started/launch-b20-token)
+and [github.com/base/base-std](https://github.com/base/base-std)), so
+deploy and mint are real, wallet-signed transactions, not stubs:
+
+1. **The wallet signs, not the server.** `StepReview.tsx` and
+   `MintForm.tsx` call the factory/token contracts directly through the
+   connected wallet via wagmi's `useWriteContract`. The server never
+   holds a private key and never could sign on your behalf.
+2. **Real gas, real gwei.** `hooks/useB20Transaction.ts` waits for the
+   transaction receipt and reports actual `gasUsed`, `effectiveGasPrice`
+   (in gwei), and total ETH cost — not estimates.
+3. **The server independently re-verifies.** `/api/create-token` and
+   `/api/mint` don't trust the client's claim of success —
+   `lib/verifyDeployment.ts` and `lib/verifyTokenAction.ts` re-fetch the
+   receipt from the RPC directly, confirm it succeeded, confirm it was
+   sent to the actual factory/token address, and (for deploy) confirm
+   `isB20()` is true before persisting anything.
+4. **Activation is checked before asking for a signature.** Base delayed
+   B20's mainnet activation after a stability incident post-Beryl —
+   `StepReview.tsx` checks `ActivationRegistry.isActivated()` for the
+   chosen network and blocks the attempt with a clear message rather than
+   sending a transaction that would just revert.
+5. **Deployed tokens link to Basescan** on the token's Overview page —
+   both the contract address and the deploy transaction.
+
+**Still not converted to this pattern:** burn and freeze. They still run
+through the old server-side stub in `services/b20.ts` and will fail if
+you try them — see the comment at the top of that file for exactly what
+mint's conversion looked like, since burn is a near-identical change.
+Freeze also needs a real design correction: B20 doesn't have a "freeze
+role" — blocking an address is a `PolicyRegistry` assignment, and the
+actual seize mechanism is `burnBlocked`, gated by `BURN_BLOCKED_ROLE`. The
+wizard's Permissions step still collects a generic "freeze" role and maps
+it to `BURN_BLOCKED_ROLE` (see `lib/b20-encoding.ts`), but there's no
+`PolicyRegistry` wiring yet, so an address can't actually be blocked from
+transferring — only burned from once it's already blocked some other way.
+
+Also corrected while wiring this: asset-variant decimals are constrained
+to `[6, 18]` on-chain (`InvalidDecimals` revert otherwise), not `[0, 18]`
+as the wizard validated before; and stablecoins need an immutable
+currency code (`B20StablecoinCreateParams.currency`), which the wizard
+now collects and previously didn't.
+
 ## What's scaffolded vs. what's next
 
 **Done:** landing page (GSAP + Lenis + R3F + Activation Console), all 6
 wizard steps with validation and cross-step state (zustand), SIWE auth
 wired end to end, dashboard shell + sidebar, "My tokens" list, per-token
 pages (Overview/Mint/Burn/Freeze/Transfer rules/Metadata/Roles/Analytics/Activity)
-with real ownership checks, a functional template marketplace, Prisma
-schema, and API routes for create/mint/burn/freeze/metadata/roles/transfer-rules.
+with real ownership checks, a functional template marketplace, network
+selection (Base Sepolia vs. Mainnet, chosen at deploy time and stored per
+token), logo/banner uploads via presigned Cloudflare R2 URLs, rate
+limiting on every write-capable API route, a small unit test suite
+(vitest), a CI workflow, and — as of this pass — **real, wallet-signed
+on-chain deployment and minting** (see the section above).
 
-The wizard's full draft (roles, transfer rules, tokenomics — not just
-name/symbol/supply) is now actually sent to and persisted by
-`/api/create-token`; earlier this was silently dropped on submit. Mint,
-burn, and freeze all write a `Transaction` row on success, and a
-successful deploy writes a `Deployment` row — these code paths just won't
-fire yet since the chain calls they depend on aren't implemented (see
-below).
-
-**Intentionally stubbed, not broken:** every function in `services/b20.ts`
-(`deployB20Token`, `mintB20Token`, `burnB20Token`, `freezeB20Address`,
-`unfreezeB20Address`) throws on purpose — Base's B20 precompile ABI isn't
-public yet, so nothing here pretends to move real tokens. Every page and
-API route that depends on one of these is fully wired up to call it;
-once the real SDK lands, only `services/b20.ts` needs to change.
+The wizard's full draft (roles, transfer rules, tokenomics) is persisted
+by `/api/create-token` alongside the verified deploy transaction. Mint
+writes a `Transaction` row on success; a successful deploy writes a
+`Deployment` row. Burn and freeze still write a row only once *they're*
+converted to the same real pattern — see "On-chain deployment" above for
+exactly what's left there.
 
 **Not started:** on-chain indexing (holder counts, transfer volume — these
 need a subgraph or log-scanning job, not just a database), multi-project
 support (the `Project` model exists but there's no project switcher — one
-project per wallet is hardcoded), network selection in the UI (mint/burn/
-deploy are hardcoded to `base-sepolia`), file uploads for logo/banner, the
-Explorer, the AI features from the product doc (Token Generator,
-Tokenomics Generator, Audit, Whitepaper), tests, CI, and rate limiting.
+project per wallet is hardcoded), `PolicyRegistry` wiring (needed for
+transfer rules and freeze to actually restrict anything on-chain, not
+just record intent), the Explorer, the AI features from the product doc
+(Token Generator, Tokenomics Generator, Audit, Whitepaper), and
+integration/e2e tests (only unit tests exist so far — the API routes
+aren't covered).
+
+**Known limitation, not a bug:** rate limiting is in-memory and
+per-process — see the comment in `lib/rateLimit.ts`. It's fine for a
+single server instance; on serverless with multiple concurrent instances
+the effective limit multiplies by instance count. Swap in Upstash Redis's
+`@upstash/ratelimit` before relying on this in a scaled deployment.
 
 ## Getting started
 
 ```bash
-npm install
+npm install --legacy-peer-deps
 cp .env.example .env
 # generate AUTH_SECRET into .env:
 npx auth secret
 npm run db:push   # once DATABASE_URL is set
 npm run dev
 ```
+
+Run the unit test suite with `npm run test` (or `npm run test:watch`
+while developing). `npm run typecheck` and `npm run lint` run standalone
+too — all three, plus a full build, run in CI on every push (see
+`.github/workflows/ci.yml`).

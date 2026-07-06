@@ -4,6 +4,8 @@ import { isAddress } from "viem";
 import { getOwnedToken } from "@/lib/tokens";
 import { prisma } from "@/lib/prisma";
 import { freezeB20Address, unfreezeB20Address } from "@/services/b20";
+import { auth } from "@/lib/auth";
+import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
 
 const freezeSchema = z.object({
   tokenId: z.string().min(1),
@@ -11,6 +13,11 @@ const freezeSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  const limitKey = session?.address?.toLowerCase() ?? getClientIp(req);
+  const limited = rateLimit(`freeze:${limitKey}`, 20, 60_000);
+  if (!limited.allowed) return tooManyRequests(limited);
+
   let body: unknown;
   try {
     body = await req.json();
@@ -38,7 +45,7 @@ export async function POST(req: NextRequest) {
     const result = await freezeB20Address(
       token.contractAddress,
       parsed.data.address,
-      "base-sepolia"
+      token.network as "base-mainnet" | "base-sepolia"
     );
 
     await prisma.$transaction([
@@ -74,6 +81,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const session = await auth();
+  const limitKey = session?.address?.toLowerCase() ?? getClientIp(req);
+  const limited = rateLimit(`freeze:${limitKey}`, 20, 60_000);
+  if (!limited.allowed) return tooManyRequests(limited);
+
   const { searchParams } = new URL(req.url);
   const tokenId = searchParams.get("tokenId");
   const address = searchParams.get("address");
@@ -97,7 +109,7 @@ export async function DELETE(req: NextRequest) {
     const result = await unfreezeB20Address(
       token.contractAddress,
       address,
-      "base-sepolia"
+      token.network as "base-mainnet" | "base-sepolia"
     );
 
     await prisma.$transaction([

@@ -1,52 +1,19 @@
-import { createPublicClient, http } from "viem";
-import { base, baseSepolia } from "viem/chains";
-import type { CreateTokenDraft } from "@/types/token";
-
-export const publicClients = {
-  "base-mainnet": createPublicClient({
-    chain: base,
-    transport: http(process.env.NEXT_PUBLIC_BASE_RPC_URL),
-  }),
-  "base-sepolia": createPublicClient({
-    chain: baseSepolia,
-    transport: http(process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL),
-  }),
-} as const;
-
-export type Network = keyof typeof publicClients;
-
-export interface DeployTokenResult {
-  txHash: `0x${string}`;
-  contractAddress: `0x${string}`;
-}
+export type Network = "base-mainnet" | "base-sepolia";
 
 /**
- * None of these are implemented yet — same reasoning as deployB20Token:
- * the real precompile call encoding depends on Base's Standard Library,
- * which isn't confirmed. Throwing explicitly here means the mint/burn API
- * routes surface a clear "not implemented" error instead of silently
- * recording a fake on-chain action.
+ * deployB20Token and mintB20Token used to live here as explicit-throw
+ * stubs. They're gone now — deploy and mint are real client-signed
+ * transactions (see components/wizard/StepReview.tsx and
+ * components/dashboard/MintForm.tsx), verified server-side in
+ * lib/verifyDeployment.ts and lib/verifyTokenAction.ts rather than
+ * attempted from the server.
+ *
+ * burn and freeze still need the identical conversion — they currently
+ * throw here and their API routes/pages haven't been rewired to sign
+ * client-side yet. The pattern to follow is exactly what mint just did:
+ * a client component using useB20Transaction + b20TokenAbi, then the API
+ * route calls verifyTokenActionTx instead of attempting the call itself.
  */
-export async function deployB20Token(
-  _draft: CreateTokenDraft,
-  _network: Network
-): Promise<DeployTokenResult> {
-  throw new Error(
-    "deployB20Token is not implemented — wire the Base B20 SDK or the " +
-      "Activation Registry call from contracts/b20.ts before using this in production."
-  );
-}
-
-export async function mintB20Token(
-  _contractAddress: string,
-  _recipient: string,
-  _amount: string,
-  _network: Network
-): Promise<{ txHash: `0x${string}` }> {
-  throw new Error(
-    "mintB20Token is not implemented — wire the Base B20 SDK mint call before using this in production."
-  );
-}
 
 export async function burnB20Token(
   _contractAddress: string,
@@ -54,7 +21,7 @@ export async function burnB20Token(
   _network: Network
 ): Promise<{ txHash: `0x${string}` }> {
   throw new Error(
-    "burnB20Token is not implemented — wire the Base B20 SDK burn call before using this in production."
+    "burnB20Token still runs server-side and isn't wired to a real chain call — convert it to a client-signed transaction like mint, then remove this stub."
   );
 }
 
@@ -64,7 +31,7 @@ export async function freezeB20Address(
   _network: Network
 ): Promise<{ txHash: `0x${string}` }> {
   throw new Error(
-    "freezeB20Address is not implemented — wire the Base B20 SDK freeze call before using this in production."
+    "freezeB20Address still runs server-side and isn't wired to a real chain call — the real mechanism is burnBlocked gated by BURN_BLOCKED_ROLE, plus a PolicyRegistry blocklist assignment this doesn't handle yet."
   );
 }
 
@@ -74,6 +41,6 @@ export async function unfreezeB20Address(
   _network: Network
 ): Promise<{ txHash: `0x${string}` }> {
   throw new Error(
-    "unfreezeB20Address is not implemented — wire the Base B20 SDK freeze call before using this in production."
+    "unfreezeB20Address still runs server-side and isn't wired to a real chain call."
   );
 }

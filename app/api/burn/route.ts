@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getOwnedToken } from "@/lib/tokens";
 import { prisma } from "@/lib/prisma";
 import { burnB20Token } from "@/services/b20";
+import { auth } from "@/lib/auth";
+import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
 
 const burnSchema = z.object({
   tokenId: z.string().min(1),
@@ -10,6 +12,11 @@ const burnSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  const limitKey = session?.address?.toLowerCase() ?? getClientIp(req);
+  const limited = rateLimit(`burn:${limitKey}`, 20, 60_000);
+  if (!limited.allowed) return tooManyRequests(limited);
+
   let body: unknown;
   try {
     body = await req.json();
@@ -44,7 +51,7 @@ export async function POST(req: NextRequest) {
     const result = await burnB20Token(
       token.contractAddress,
       parsed.data.amount,
-      "base-sepolia"
+      token.network as "base-mainnet" | "base-sepolia"
     );
 
     await prisma.transaction.create({

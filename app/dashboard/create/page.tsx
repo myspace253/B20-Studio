@@ -7,7 +7,7 @@ import { StepSupply } from "@/components/wizard/StepSupply";
 import { StepPermissions } from "@/components/wizard/StepPermissions";
 import { StepTransferRules } from "@/components/wizard/StepTransferRules";
 import { StepTokenomics } from "@/components/wizard/StepTokenomics";
-import { StepReview } from "@/components/wizard/StepReview";
+import { StepReview, type DeployedResult } from "@/components/wizard/StepReview";
 import { useTokenDraftStore } from "@/lib/store/tokenDraft";
 import type { BasicInfoFormValues } from "@/lib/schemas/basicInfo";
 import type { SupplyFormValues } from "@/lib/schemas/supply";
@@ -53,6 +53,7 @@ export default function CreateTokenPage() {
       initialSupply: values.initialSupply,
       maximumSupply: values.maximumSupply || undefined,
       decimals: values.decimals,
+      currency: values.currency || undefined,
       mintable: values.mintable,
       burnable: values.burnable,
       pausable: values.pausable,
@@ -75,7 +76,7 @@ export default function CreateTokenPage() {
     draft.setStep(5);
   };
 
-  const handleDeploy = async () => {
+  const handleDeployed = async (result: DeployedResult) => {
     if (
       !draft.basicInfo ||
       !draft.supply ||
@@ -93,15 +94,19 @@ export default function CreateTokenPage() {
       tokenomics: draft.tokenomics,
     };
 
+    // The transaction already happened and was confirmed client-side, in
+    // the user's own wallet — this call only persists the result. The
+    // server independently re-verifies the receipt (see /api/create-token)
+    // rather than trusting these fields at face value.
     const res = await fetch("/api/create-token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, deployResult: result }),
     });
 
     if (!res.ok) {
       const body = await res.json().catch(() => null);
-      throw new Error(body?.error || "Deployment request failed");
+      throw new Error(body?.error || "Saving the deployed token failed");
     }
 
     draft.reset();
@@ -153,8 +158,10 @@ export default function CreateTokenPage() {
               transferRules: draft.transferRules,
               tokenomics: draft.tokenomics,
             }}
+            network={draft.network}
+            onNetworkChange={draft.setNetwork}
             onBack={() => draft.setStep(4)}
-            onDeploy={handleDeploy}
+            onDeployed={handleDeployed}
           />
         )}
     </WizardShell>

@@ -1,5 +1,6 @@
 import { getOwnedToken } from "@/lib/tokens";
 import { formatTokenAmount } from "@/utils/format";
+import { explorerAddressUrl, explorerTxUrl } from "@/lib/explorer";
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
@@ -24,6 +25,7 @@ export default async function TokenOverviewPage({
   return (
     <div className="space-y-8">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Network" value={token.network} />
         <StatCard
           label="Initial supply"
           value={formatTokenAmount(token.initialSupply, token.decimals)}
@@ -47,11 +49,44 @@ export default async function TokenOverviewPage({
         <p className="font-mono text-xs uppercase tracking-wide text-fog">
           Status
         </p>
-        <p className="mt-1 text-sm text-white">
-          {token.contractAddress.startsWith("pending-")
-            ? "Draft — not yet deployed on-chain."
-            : token.contractAddress}
-        </p>
+        {token.contractAddress.startsWith("pending-") ? (
+          <p className="mt-1 text-sm text-white">
+            Draft — not yet deployed on-chain.
+          </p>
+        ) : (
+          <div className="mt-1 space-y-1.5 text-sm">
+            <p>
+              <a
+                href={explorerAddressUrl(
+                  token.network as "base-mainnet" | "base-sepolia",
+                  token.contractAddress
+                )}
+                target="_blank"
+                rel="noreferrer"
+                className="font-mono text-base hover:underline"
+              >
+                {token.contractAddress}
+              </a>
+              <span className="ml-2 text-xs text-fog">View on Basescan ↗</span>
+            </p>
+            {token.deployments[0] && (
+              <p>
+                <a
+                  href={explorerTxUrl(
+                    token.network as "base-mainnet" | "base-sepolia",
+                    token.deployments[0].txHash
+                  )}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-xs text-muted hover:underline"
+                >
+                  {token.deployments[0].txHash}
+                </a>
+                <span className="ml-2 text-xs text-fog">Deploy transaction ↗</span>
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

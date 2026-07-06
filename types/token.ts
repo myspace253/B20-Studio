@@ -17,6 +17,7 @@ export interface TokenSupplyConfig {
   initialSupply: string; // kept as string to avoid float precision loss
   maximumSupply?: string;
   decimals: number; // fixed at 6 for stablecoin variant
+  currency?: string; // required for stablecoin variant — immutable ISO code, uppercase A-Z
   mintable: boolean;
   burnable: boolean;
   pausable: boolean;

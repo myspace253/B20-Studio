@@ -3,15 +3,23 @@ import { z } from "zod";
 import { isAddress } from "viem";
 import { getOwnedToken } from "@/lib/tokens";
 import { prisma } from "@/lib/prisma";
-import { mintB20Token } from "@/services/b20";
+import { auth } from "@/lib/auth";
+import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
+import { verifyTokenActionTx } from "@/lib/verifyTokenAction";
 
 const mintSchema = z.object({
   tokenId: z.string().min(1),
   recipient: z.string().refine((v) => isAddress(v), "Invalid address"),
-  amount: z.string().regex(/^[0-9]+$/, "Whole units only"),
+  amount: z.string().regex(/^[0-9]+$/, "Whole base units only"),
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  const limitKey = session?.address?.toLowerCase() ?? getClientIp(req);
+  const limited = rateLimit(`mint:${limitKey}`, 20, 60_000);
+  if (!limited.allowed) return tooManyRequests(limited);
+
   let body: unknown;
   try {
     body = await req.json();
@@ -27,8 +35,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // getOwnedToken already scopes to the signed-in wallet, so a missing
-  // result covers "not signed in", "doesn't exist", and "not yours" alike.
   const token = await getOwnedToken(parsed.data.tokenId);
   if (!token) {
     return NextResponse.json(
@@ -44,36 +50,29 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  try {
-    const result = await mintB20Token(
-      token.contractAddress,
-      parsed.data.recipient,
-      parsed.data.amount,
-      "base-sepolia"
-    );
+  const verification = await verifyTokenActionTx({
+    network: token.network as "base-mainnet" | "base-sepolia",
+    txHash: parsed.data.txHash as `0x${string}`,
+    tokenAddress: token.contractAddress as `0x${string}`,
+    functionName: "mint",
+  });
 
-    // Only reached once mintB20Token is actually implemented — wired now
-    // so nothing else needs to change when that happens.
-    await prisma.transaction.create({
-      data: {
-        tokenId: token.id,
-        type: "mint",
-        txHash: result.txHash,
-        to: parsed.data.recipient,
-        amount: parsed.data.amount,
-      },
-    });
-
-    return NextResponse.json({ txHash: result.txHash }, { status: 200 });
-  } catch (err) {
+  if (!verification.ok) {
     return NextResponse.json(
-      {
-        error:
-          err instanceof Error
-            ? err.message
-            : "Mint failed — chain call not implemented yet.",
-      },
-      { status: 501 }
+      { error: `Could not verify the mint: ${verification.reason}` },
+      { status: 422 }
     );
   }
+
+  await prisma.transaction.create({
+    data: {
+      tokenId: token.id,
+      type: "mint",
+      txHash: parsed.data.txHash,
+      to: parsed.data.recipient,
+      amount: parsed.data.amount,
+    },
+  });
+
+  return NextResponse.json({ ok: true }, { status: 200 });
 }

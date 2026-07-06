@@ -29,6 +29,7 @@ export function StepSupply({ defaultValues, onNext, onBack }: StepSupplyProps) {
       mintable: true,
       burnable: true,
       pausable: false,
+      currency: "",
       ...defaultValues,
     },
   });
@@ -75,10 +76,25 @@ export function StepSupply({ defaultValues, onNext, onBack }: StepSupplyProps) {
           label="Decimals"
           type="number"
           disabled={variant === "stablecoin"}
-          hint={variant === "stablecoin" ? "Fixed at 6 for the stablecoin variant" : undefined}
+          hint={
+            variant === "stablecoin"
+              ? "Fixed at 6 for the stablecoin variant"
+              : "Between 6 and 18 — enforced on-chain"
+          }
           error={errors.decimals?.message}
           {...register("decimals")}
         />
+        {variant === "stablecoin" && (
+          <TextField
+            label="Currency code"
+            placeholder="USD"
+            hint="Uppercase, immutable after creation"
+            error={errors.currency?.message}
+            {...register("currency", {
+              setValueAs: (v: string) => v?.toUpperCase(),
+            })}
+          />
+        )}
       </div>
 
       <fieldset className="space-y-4">
