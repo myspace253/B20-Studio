@@ -105,8 +105,14 @@ export async function POST(req: NextRequest) {
   });
 
   if (!verification.ok) {
+    console.error("Deployment verification failed:", {
+      network: deployResult.network,
+      txHash: deployResult.txHash,
+      contractAddress: deployResult.contractAddress,
+      reason: verification.reason,
+    });
     return NextResponse.json(
-      { error: `Could not verify the deployment: ${verification.reason}` },
+      { error: `Deployment verification failed: ${verification.reason}` },
       { status: 422 }
     );
   }
