@@ -209,6 +209,8 @@ the effective limit multiplies by instance count. Swap in Upstash Redis's
 ```bash
 npm install --legacy-peer-deps
 cp .env.example .env
+# generate prisma
+npx prisma generate
 # generate AUTH_SECRET into .env:
 npx auth secret
 npm run db:push   # once DATABASE_URL is set

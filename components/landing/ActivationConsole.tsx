@@ -17,7 +17,7 @@ const STEPS = [
   { label: "compile", text: "Registering precompile · variant: Asset" },
   { label: "policy", text: "Attaching supply cap · transfer policy: open" },
   { label: "roles", text: "Granting MINT_ROLE, BURN_ROLE to issuer" },
-  { label: "deploy", text: "Token live · no contract, no ABI, no audit queue" },
+  { label: "deploy", text: "Token live · contract, ABI, audit queue" },
 ];
 
 export function ActivationConsole() {
