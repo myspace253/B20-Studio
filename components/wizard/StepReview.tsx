@@ -18,7 +18,7 @@ import {
 import {
   encodeAssetCreateParams,
   encodeStablecoinCreateParams,
-  buildInitCallsFromRoles,
+  buildInitCalls,
 } from "@/lib/b20-encoding";
 
 export interface DeployedResult {
@@ -154,10 +154,12 @@ export function StepReview({
               draft.supply.decimals
             );
 
-      const initCalls = buildInitCallsFromRoles(
-        draft.roles,
-        draft.supply.maximumSupply
-      );
+      const initCalls = buildInitCalls({
+        roles: draft.roles,
+        initialAdmin,
+        initialSupply: draft.supply.initialSupply,
+        maximumSupply: draft.supply.maximumSupply,
+      });
 
       // Predict the deterministic address before sending, rather than
       // parsing it back out of the receipt's event logs afterward.

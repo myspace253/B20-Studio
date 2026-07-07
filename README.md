@@ -183,6 +183,21 @@ instead of the one you specified — see `lib/b20-encoding.ts` and
 round-trips every encoded call against the real ABI so this can't drift
 silently again.
 
+**Diagnosed from a real failed Sepolia deploy:** decoding the actual
+calldata from a reverted transaction (Basescan doesn't surface a revert
+reason for this kind of precompile call) turned up two bugs. First, the
+`initCalls` included a redundant `grantRole(DEFAULT_ADMIN_ROLE, X)` for
+the same address already set as `initialAdmin` — now deduped regardless
+of whether that address came in via the "owner" or "admin" role type.
+Second, and more serious: **B20's create params have no initial-supply
+field.** `createB20` only sets metadata and admin, so without an explicit
+`mint()` during the bootstrap window, every token deployed before this
+fix has zero supply, deploy "succeeding" or not. `buildInitCalls` now
+mints the wizard's initial supply to `initialAdmin` in the same
+transaction, ordered before `updateSupplyCap` (a cap set below the
+resulting supply would revert). Both are covered by regression tests in
+`lib/b20-encoding.test.ts`.
+
 ## What's scaffolded vs. what's next
 
 **Done:** landing page (GSAP + Lenis + R3F + Activation Console), all 6

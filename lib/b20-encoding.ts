@@ -74,29 +74,61 @@ export function encodeUpdateSupplyCapCall(cap: bigint): `0x${string}` {
 }
 
 /**
+ * B20's create params (B20AssetCreateParams / B20StablecoinCreateParams)
+ * have no initial-supply field — createB20 only sets metadata and admin.
+ * Without an explicit mint() during the bootstrap window, a "successful"
+ * deploy would leave the token at zero supply. This was missing entirely
+ * before; every deployed token so far has zero balance anywhere.
+ */
+export function encodeMintCall(
+  to: `0x${string}`,
+  amount: bigint
+): `0x${string}` {
+  return encodeFunctionData({
+    abi: b20TokenAbi,
+    functionName: "mint",
+    args: [to, amount],
+  });
+}
+
+/**
  * Maps this app's wizard role types onto real B20 roles. Not a 1:1 mapping —
  * "transfer" isn't a role at all in B20 (transfer restriction is a
- * PolicyRegistry assignment, not wired here yet), and "owner" doesn't
- * produce a grantRole call at all: it's threaded through as `initialAdmin`
- * in the create params instead (see StepReview.tsx), since that's how B20
- * actually assigns DEFAULT_ADMIN_ROLE at creation. Granting it again here
- * for the same address would just be redundant; "admin" role entries
- * still produce additional DEFAULT_ADMIN_ROLE grants for genuinely
- * separate co-admins.
+ * PolicyRegistry assignment, not wired here yet), and DEFAULT_ADMIN_ROLE
+ * is never re-granted for `initialAdmin` here regardless of which role
+ * type carries that address (owner, or admin left equal to the deployer)
+ * — it's already assigned via `initialAdmin` in the create params (see
+ * StepReview.tsx), and a redundant grantRole call for the same address is
+ * exactly what caused a real failed deploy on Sepolia. "admin" entries for
+ * a genuinely different address still produce additional grants.
+ *
+ * Order matters here: mint (establishing totalSupply) happens before
+ * updateSupplyCap, since a cap set below an existing supply would revert.
+ * The wizard's own validation already guarantees maximumSupply >=
+ * initialSupply, so this ordering is always safe given valid input.
  */
-export function buildInitCallsFromRoles(
-  roles: TokenRoleAssignment[],
-  maximumSupply: string | undefined
-): `0x${string}`[] {
+export function buildInitCalls(params: {
+  roles: TokenRoleAssignment[];
+  initialAdmin: `0x${string}`;
+  initialSupply: string;
+  maximumSupply: string | undefined;
+}): `0x${string}`[] {
+  const { roles, initialAdmin, initialSupply, maximumSupply } = params;
   const calls: `0x${string}`[] = [];
+  const admin = initialAdmin.toLowerCase();
 
   for (const { role, address } of roles) {
     if (!isAddress(address)) continue;
+    if (
+      (role === "owner" || role === "admin") &&
+      address.toLowerCase() === admin
+    ) {
+      // Already holds DEFAULT_ADMIN_ROLE via initialAdmin — see above.
+      continue;
+    }
 
     switch (role) {
       case "owner":
-        // Handled via initialAdmin in the create params — see StepReview.tsx.
-        break;
       case "admin":
         calls.push(encodeGrantRoleCall(B20_ROLE.DEFAULT_ADMIN_ROLE, address));
         break;
@@ -117,6 +149,11 @@ export function buildInitCallsFromRoles(
         // not a role. Nothing to encode here yet.
         break;
     }
+  }
+
+  const initialSupplyBaseUnits = BigInt(initialSupply || "0");
+  if (initialSupplyBaseUnits > 0n) {
+    calls.push(encodeMintCall(initialAdmin, initialSupplyBaseUnits));
   }
 
   if (maximumSupply) {
