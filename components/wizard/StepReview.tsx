@@ -123,6 +123,13 @@ export function StepReview({
           ? B20_VARIANT.stablecoin
           : B20_VARIANT.asset;
 
+      // The Permissions step's "Owner" becomes initialAdmin — B20 assigns
+      // DEFAULT_ADMIN_ROLE this way at creation, not via a separate role
+      // grant. Falling back to the connected wallet only covers the
+      // (schema-disallowed) case where no owner was somehow set.
+      const ownerRole = draft.roles.find((r) => r.role === "owner");
+      const initialAdmin = (ownerRole?.address as `0x${string}` | undefined) ?? address;
+
       // Fresh salt per attempt — createB20's address is deterministic on
       // (variant, sender, salt), so reusing a salt after a prior success
       // reverts with TokenAlreadyExists.
@@ -137,13 +144,13 @@ export function StepReview({
           ? encodeStablecoinCreateParams(
               draft.basicInfo.name,
               draft.basicInfo.symbol,
-              address,
+              initialAdmin,
               draft.supply.currency ?? ""
             )
           : encodeAssetCreateParams(
               draft.basicInfo.name,
               draft.basicInfo.symbol,
-              address,
+              initialAdmin,
               draft.supply.decimals
             );
 
@@ -235,6 +242,13 @@ export function StepReview({
         {draft.roles.map((r) => (
           <Row key={r.role} label={r.role} value={r.address} />
         ))}
+        {draft.roles.some((r) => r.role === "owner") && (
+          <p className="mt-2 text-xs text-fog">
+            The Owner address becomes this token&apos;s admin at creation
+            (B20&apos;s <code>initialAdmin</code>), not via a separate role
+            grant.
+          </p>
+        )}
         {draft.roles.some((r) => r.role === "transfer") && (
           <p className="mt-2 text-xs text-fog">
             B20 doesn&apos;t have a &quot;transfer&quot; role — transfer

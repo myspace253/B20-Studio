@@ -168,6 +168,21 @@ as the wizard validated before; and stablecoins need an immutable
 currency code (`B20StablecoinCreateParams.currency`), which the wizard
 now collects and previously didn't.
 
+**On verification:** the ABI/encoding above was originally reconstructed
+from partial search snippets and a GitHub page fetch that — it turned out
+— only returned the page title, not the actual source. That's not a good
+foundation for code touching real funds, so it was re-verified by cloning
+`base/base-std` directly and reading the real `.sol` interfaces. Most of
+the reconstruction held up exactly (addresses, `createB20`/`getB20Address`
+signatures, struct layouts, role constants down to the literal
+`keccak256(...)` strings). One real bug this caught: the wizard's "Owner"
+field was being ignored in favor of whichever wallet happened to be
+connected, which would have granted admin to two different addresses
+instead of the one you specified — see `lib/b20-encoding.ts` and
+`components/wizard/StepReview.tsx`. `lib/b20-encoding.test.ts` now
+round-trips every encoded call against the real ABI so this can't drift
+silently again.
+
 ## What's scaffolded vs. what's next
 
 **Done:** landing page (GSAP + Lenis + R3F + Activation Console), all 6
@@ -207,10 +222,8 @@ the effective limit multiplies by instance count. Swap in Upstash Redis's
 ## Getting started
 
 ```bash
-npm install --legacy-peer-deps
+npm install
 cp .env.example .env
-# generate prisma
-npx prisma generate
 # generate AUTH_SECRET into .env:
 npx auth secret
 npm run db:push   # once DATABASE_URL is set

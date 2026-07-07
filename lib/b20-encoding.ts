@@ -75,11 +75,14 @@ export function encodeUpdateSupplyCapCall(cap: bigint): `0x${string}` {
 
 /**
  * Maps this app's wizard role types onto real B20 roles. Not a 1:1 mapping —
- * B20 doesn't have separate "owner" vs "admin" roles (both collapse to
- * DEFAULT_ADMIN_ROLE), and "transfer" isn't a role at all in B20 — transfer
- * restriction is a PolicyRegistry assignment (updatePolicy), which isn't
- * wired here yet. Roles typed "transfer" are silently skipped rather than
- * encoded as something that doesn't exist on-chain.
+ * "transfer" isn't a role at all in B20 (transfer restriction is a
+ * PolicyRegistry assignment, not wired here yet), and "owner" doesn't
+ * produce a grantRole call at all: it's threaded through as `initialAdmin`
+ * in the create params instead (see StepReview.tsx), since that's how B20
+ * actually assigns DEFAULT_ADMIN_ROLE at creation. Granting it again here
+ * for the same address would just be redundant; "admin" role entries
+ * still produce additional DEFAULT_ADMIN_ROLE grants for genuinely
+ * separate co-admins.
  */
 export function buildInitCallsFromRoles(
   roles: TokenRoleAssignment[],
@@ -92,6 +95,8 @@ export function buildInitCallsFromRoles(
 
     switch (role) {
       case "owner":
+        // Handled via initialAdmin in the create params — see StepReview.tsx.
+        break;
       case "admin":
         calls.push(encodeGrantRoleCall(B20_ROLE.DEFAULT_ADMIN_ROLE, address));
         break;
