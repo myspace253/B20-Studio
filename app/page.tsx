@@ -1,4 +1,5 @@
 import { Hero } from "@/components/landing/Hero";
+import { HowItWorks } from "@/components/landing/HowItWorks";
 import { Navbar } from "@/components/landing/Navbar";
 
 export default function LandingPage() {
@@ -6,6 +7,7 @@ export default function LandingPage() {
     <main>
       <Navbar />
       <Hero />
+      <HowItWorks />
       {/* Sections below the fold — feature grid, template marketplace teaser,
           explorer preview — get added as separate components under
           components/landing/ once copy is ready, to keep this file scannable. */}
