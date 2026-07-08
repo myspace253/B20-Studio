@@ -1,6 +1,14 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+async function safeQuery<T>(query: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await query();
+  } catch {
+    return fallback;
+  }
+}
+
 export async function getSessionAddress(): Promise<string | null> {
   const session = await auth();
   return session?.address?.toLowerCase() ?? null;
@@ -10,10 +18,14 @@ export async function getOwnedTokens() {
   const address = await getSessionAddress();
   if (!address) return [];
 
-  return prisma.token.findMany({
-    where: { project: { user: { wallets: { some: { address } } } } },
-    orderBy: { createdAt: "desc" },
-  });
+  return safeQuery(
+    () =>
+      prisma.token.findMany({
+        where: { project: { user: { wallets: { some: { address } } } } },
+        orderBy: { createdAt: "desc" },
+      }),
+    []
+  );
 }
 
 /**
@@ -26,30 +38,38 @@ export async function getOwnedToken(tokenId: string) {
   const address = await getSessionAddress();
   if (!address) return null;
 
-  return prisma.token.findFirst({
-    where: {
-      id: tokenId,
-      project: { user: { wallets: { some: { address } } } },
-    },
-    include: {
-      metadata: true,
-      roles: true,
-      transferRule: true,
-      tokenomics: true,
-      frozenAddresses: true,
-      deployments: { orderBy: { createdAt: "desc" }, take: 1 },
-    },
-  });
+  return safeQuery(
+    () =>
+      prisma.token.findFirst({
+        where: {
+          id: tokenId,
+          project: { user: { wallets: { some: { address } } } },
+        },
+        include: {
+          metadata: true,
+          roles: true,
+          transferRule: true,
+          tokenomics: true,
+          frozenAddresses: true,
+          deployments: { orderBy: { createdAt: "desc" }, take: 1 },
+        },
+      }),
+    null
+  );
 }
 
 export async function getOwnedTransactions() {
   const address = await getSessionAddress();
   if (!address) return [];
 
-  return prisma.transaction.findMany({
-    where: { token: { project: { user: { wallets: { some: { address } } } } } },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-    include: { token: { select: { name: true, symbol: true } } },
-  });
+  return safeQuery(
+    () =>
+      prisma.transaction.findMany({
+        where: { token: { project: { user: { wallets: { some: { address } } } } } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        include: { token: { select: { name: true, symbol: true } } },
+      }),
+    []
+  );
 }

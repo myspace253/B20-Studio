@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAddress } from "viem";
 import { getOwnedToken } from "@/lib/tokens";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDatabaseFallback } from "@/lib/prisma";
 
 const grantSchema = z.object({
   role: z.enum(["owner", "admin", "mint", "burn", "freeze", "transfer"]),
@@ -42,9 +42,13 @@ export async function POST(
   // services/b20.ts. Surfacing it as "saved" without that would be
   // misleading, so the UI should treat this as a pending change until
   // deployB20Token-equivalent role management is wired in.
-  const grant = await prisma.tokenRole.create({
-    data: { tokenId: id, role: parsed.data.role, address: parsed.data.address },
-  });
+  const grant = await withDatabaseFallback(
+    () =>
+      prisma.tokenRole.create({
+        data: { tokenId: id, role: parsed.data.role, address: parsed.data.address },
+      }),
+    null
+  );
 
   return NextResponse.json({ role: grant }, { status: 201 });
 }
@@ -68,6 +72,9 @@ export async function DELETE(
     return NextResponse.json({ error: "roleId is required" }, { status: 400 });
   }
 
-  await prisma.tokenRole.deleteMany({ where: { id: roleId, tokenId: id } });
+  await withDatabaseFallback(
+    () => prisma.tokenRole.deleteMany({ where: { id: roleId, tokenId: id } }),
+    null
+  );
   return NextResponse.json({ ok: true }, { status: 200 });
 }

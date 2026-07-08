@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getOwnedToken } from "@/lib/tokens";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDatabaseFallback } from "@/lib/prisma";
 
 const metadataSchema = z.object({
   description: z.string().max(280).optional().or(z.literal("")),
@@ -41,11 +41,15 @@ export async function PUT(
     );
   }
 
-  const metadata = await prisma.metadata.upsert({
-    where: { tokenId: id },
-    update: parsed.data,
-    create: { tokenId: id, ...parsed.data },
-  });
+  const metadata = await withDatabaseFallback(
+    () =>
+      prisma.metadata.upsert({
+        where: { tokenId: id },
+        update: parsed.data,
+        create: { tokenId: id, ...parsed.data },
+      }),
+    null
+  );
 
   return NextResponse.json({ metadata }, { status: 200 });
 }

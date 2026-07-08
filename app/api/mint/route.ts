@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAddress } from "viem";
 import { getOwnedToken } from "@/lib/tokens";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDatabaseFallback } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
 import { verifyTokenActionTx } from "@/lib/verifyTokenAction";
@@ -64,15 +64,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  await prisma.transaction.create({
-    data: {
-      tokenId: token.id,
-      type: "mint",
-      txHash: parsed.data.txHash,
-      to: parsed.data.recipient,
-      amount: parsed.data.amount,
-    },
-  });
+  await withDatabaseFallback(
+    () =>
+      prisma.transaction.create({
+        data: {
+          tokenId: token.id,
+          type: "mint",
+          txHash: parsed.data.txHash,
+          to: parsed.data.recipient,
+          amount: parsed.data.amount,
+        },
+      }),
+    null
+  );
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { captureError } from "@/lib/monitoring";
 import { z } from "zod";
 import { getOwnedToken } from "@/lib/tokens";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDatabaseFallback } from "@/lib/prisma";
 
 const transferRuleSchema = z.object({
   type: z.enum([
@@ -50,11 +50,15 @@ export async function PUT(
     // it to the live on-chain transfer policy needs the same B20 SDK call
     // as roles/mint/burn — see services/b20.ts. Treat this as the
     // intended state until that's wired in, not the enforced state.
-    const rule = await prisma.transferRule.upsert({
-      where: { tokenId: id },
-      update: parsed.data,
-      create: { tokenId: id, ...parsed.data },
-    });
+    const rule = await withDatabaseFallback(
+      () =>
+        prisma.transferRule.upsert({
+          where: { tokenId: id },
+          update: parsed.data,
+          create: { tokenId: id, ...parsed.data },
+        }),
+      null
+    );
 
     return NextResponse.json({ rule }, { status: 200 });
   } catch (err) {

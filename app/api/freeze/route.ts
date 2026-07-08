@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isAddress } from "viem";
 import { getOwnedToken } from "@/lib/tokens";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDatabaseFallback } from "@/lib/prisma";
 import { freezeB20Address, unfreezeB20Address } from "@/services/b20";
 import { auth } from "@/lib/auth";
 import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
@@ -48,23 +48,27 @@ export async function POST(req: NextRequest) {
       token.network as "base-mainnet" | "base-sepolia"
     );
 
-    await prisma.$transaction([
-      prisma.frozenAddress.upsert({
-        where: {
-          tokenId_address: { tokenId: token.id, address: parsed.data.address },
-        },
-        update: {},
-        create: { tokenId: token.id, address: parsed.data.address },
-      }),
-      prisma.transaction.create({
-        data: {
-          tokenId: token.id,
-          type: "freeze",
-          txHash: result.txHash,
-          to: parsed.data.address,
-        },
-      }),
-    ]);
+    await withDatabaseFallback(
+      () =>
+        prisma.$transaction([
+          prisma.frozenAddress.upsert({
+            where: {
+              tokenId_address: { tokenId: token.id, address: parsed.data.address },
+            },
+            update: {},
+            create: { tokenId: token.id, address: parsed.data.address },
+          }),
+          prisma.transaction.create({
+            data: {
+              tokenId: token.id,
+              type: "freeze",
+              txHash: result.txHash,
+              to: parsed.data.address,
+            },
+          }),
+        ]),
+      null
+    );
 
     return NextResponse.json({ txHash: result.txHash }, { status: 200 });
   } catch (err) {
@@ -112,17 +116,21 @@ export async function DELETE(req: NextRequest) {
       token.network as "base-mainnet" | "base-sepolia"
     );
 
-    await prisma.$transaction([
-      prisma.frozenAddress.deleteMany({ where: { tokenId, address } }),
-      prisma.transaction.create({
-        data: {
-          tokenId: token.id,
-          type: "freeze", // same event type, distinguished by absence in frozenAddresses
-          txHash: result.txHash,
-          to: address,
-        },
-      }),
-    ]);
+    await withDatabaseFallback(
+      () =>
+        prisma.$transaction([
+          prisma.frozenAddress.deleteMany({ where: { tokenId, address } }),
+          prisma.transaction.create({
+            data: {
+              tokenId: token.id,
+              type: "freeze", // same event type, distinguished by absence in frozenAddresses
+              txHash: result.txHash,
+              to: address,
+            },
+          }),
+        ]),
+      null
+    );
 
     return NextResponse.json({ txHash: result.txHash }, { status: 200 });
   } catch (err) {

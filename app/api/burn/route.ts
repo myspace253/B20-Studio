@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getOwnedToken } from "@/lib/tokens";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDatabaseFallback } from "@/lib/prisma";
 import { burnB20Token } from "@/services/b20";
 import { auth } from "@/lib/auth";
 import { rateLimit, getClientIp, tooManyRequests } from "@/lib/rateLimit";
@@ -54,14 +54,18 @@ export async function POST(req: NextRequest) {
       token.network as "base-mainnet" | "base-sepolia"
     );
 
-    await prisma.transaction.create({
-      data: {
-        tokenId: token.id,
-        type: "burn",
-        txHash: result.txHash,
-        amount: parsed.data.amount,
-      },
-    });
+    await withDatabaseFallback(
+      () =>
+        prisma.transaction.create({
+          data: {
+            tokenId: token.id,
+            type: "burn",
+            txHash: result.txHash,
+            amount: parsed.data.amount,
+          },
+        }),
+      null
+    );
 
     return NextResponse.json({ txHash: result.txHash }, { status: 200 });
   } catch (err) {
