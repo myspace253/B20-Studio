@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { captureError } from "@/lib/monitoring";
 import { z } from "zod";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
   } catch (err) {
-    console.error("Failed to create presigned upload URL", err);
+    captureError(err, { route: "uploads/presign", tokenId: parsed.data.tokenId });
     return NextResponse.json(
       {
         error:

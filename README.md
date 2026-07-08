@@ -234,6 +234,64 @@ single server instance; on serverless with multiple concurrent instances
 the effective limit multiplies by instance count. Swap in Upstash Redis's
 `@upstash/ratelimit` before relying on this in a scaled deployment.
 
+## Going to production
+
+**Database migrations.** This has been using `prisma db push` so far, which
+is fine for prototyping but has no version history and can silently drop
+data on schema drift. Before real production traffic, switch to real
+migrations — run this once, locally, against a real database (needs a
+live DB connection this environment doesn't have, so it can't be
+generated automatically):
+
+```bash
+npx prisma migrate dev --name init
+```
+
+Commit the resulting `prisma/migrations/` folder. From then on, deploys
+run `npm run db:migrate:deploy` (safe for CI/CD — applies pending
+migrations without prompting) instead of `db:push`. Update your
+platform's build command accordingly, e.g.:
+
+```
+npx prisma migrate deploy && npx prisma generate && npm run build
+```
+
+**Connection pooling.** Serverless functions open a new DB connection per
+invocation and can exhaust Postgres's connection limit fast. If your
+provider doesn't pool for you, put a pooler (PgBouncer, Supabase's
+built-in pooler, or Prisma Accelerate) in front and point `DATABASE_URL`
+at the pooled connection with `DIRECT_URL` set to the unpooled one for
+migrations — both are already wired into `prisma/schema.prisma`.
+
+**Rate limiting.** `lib/rateLimit.ts` is in-memory and per-process — see
+the comment at the top of that file. It's genuinely broken (not just
+"less optimal") once you're running more than one instance: the real
+limit becomes your configured limit × instance count. Swap in Upstash
+Redis's `@upstash/ratelimit` before this matters.
+
+**RPC reliability.** `NEXT_PUBLIC_BASE_RPC_URL` / `NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL`
+currently default to Base's public RPC endpoints, which rate-limit
+aggressively under real traffic. Use a paid provider (Alchemy, Infura,
+QuickNode, or Base's own paid tier) for anything beyond light testing.
+
+**R2 CORS.** Presigned uploads (`app/api/uploads/presign`) PUT directly
+from the browser to R2. That needs a CORS policy on the bucket allowing
+`PUT` from your production origin — see
+[Cloudflare's R2 CORS docs](https://developers.cloudflare.com/r2/buckets/cors/).
+Without it, uploads will fail in the browser with an opaque CORS error
+even though the presigned URL itself is valid.
+
+**Error tracking.** There's no error monitoring beyond `console.error`
+right now — nothing surfaces a failed mint or a Prisma error unless
+someone's watching platform logs. Worth adding Sentry or similar before
+relying on this with real users.
+
+**Secrets.** Generate a real `AUTH_SECRET` (`npx auth secret`) and a real
+`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (free at
+[cloud.reown.com](https://cloud.reown.com)) — the app runs without them
+(see `lib/wagmi.ts`'s comment on why that check isn't a hard build-time
+failure), but auth and WalletConnect won't actually work until they're set.
+
 ## Getting started
 
 ```bash

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { captureError } from "@/lib/monitoring";
 import { z } from "zod";
 import { isAddress } from "viem";
 import { prisma } from "@/lib/prisma";
@@ -183,7 +184,7 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (err) {
-    console.error("Failed to save deployed token", err);
+    captureError(err, { route: "create-token", deployResult });
     if (
       typeof err === "object" &&
       err &&

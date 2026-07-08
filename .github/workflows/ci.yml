@@ -14,6 +14,7 @@ jobs:
       # Dummy values so build-time code paths that read these don't crash.
       # No real database or wallet interaction happens during lint/typecheck/build.
       DATABASE_URL: "postgresql://user:password@localhost:5432/base_studio"
+      DIRECT_URL: "postgresql://user:password@localhost:5432/base_studio"
       AUTH_SECRET: "ci-only-placeholder-not-used-for-anything-real"
       NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "ci-placeholder"
 

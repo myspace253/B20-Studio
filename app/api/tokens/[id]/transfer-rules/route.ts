@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { captureError } from "@/lib/monitoring";
 import { z } from "zod";
 import { getOwnedToken } from "@/lib/tokens";
 import { prisma } from "@/lib/prisma";
@@ -57,7 +58,7 @@ export async function PUT(
 
     return NextResponse.json({ rule }, { status: 200 });
   } catch (err) {
-    console.error("Failed to update transfer rule", err);
+    captureError(err, { route: "tokens/[id]/transfer-rules", tokenId: id });
     return NextResponse.json(
       { error: "Could not save transfer rule." },
       { status: 500 }
