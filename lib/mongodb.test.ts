@@ -5,11 +5,13 @@ const closeMock = vi.fn();
 const dbMock = vi.fn(() => ({ command: vi.fn() }));
 
 vi.mock("mongodb", () => ({
-  MongoClient: vi.fn().mockImplementation(() => ({
-    connect: connectMock,
-    close: closeMock,
-    db: dbMock,
-  })),
+  MongoClient: vi.fn().mockImplementation(function MockMongoClient() {
+    return {
+      connect: connectMock,
+      close: closeMock,
+      db: dbMock,
+    };
+  }),
   ServerApiVersion: { v1: "1" },
 }));
 
