@@ -159,6 +159,7 @@ export function StepReview({
         initialAdmin,
         initialSupply: draft.supply.initialSupply,
         maximumSupply: draft.supply.maximumSupply,
+        decimals: draft.supply.decimals,
         mintable: draft.supply.mintable,
         burnable: draft.supply.burnable,
         pausable: draft.supply.pausable,

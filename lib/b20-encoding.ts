@@ -1,4 +1,9 @@
-import { encodeAbiParameters, encodeFunctionData, isAddress } from "viem";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  isAddress,
+  parseUnits,
+} from "viem";
 import { b20TokenAbi, B20_ROLE } from "@/contracts/b20";
 import type { TokenRoleAssignment } from "@/types/token";
 
@@ -112,6 +117,7 @@ export function buildInitCalls(params: {
   initialAdmin: `0x${string}`;
   initialSupply: string;
   maximumSupply: string | undefined;
+  decimals: number;
   mintable?: boolean;
   burnable?: boolean;
   pausable?: boolean;
@@ -121,6 +127,7 @@ export function buildInitCalls(params: {
     initialAdmin,
     initialSupply,
     maximumSupply,
+    decimals,
     mintable,
     burnable,
     pausable,
@@ -182,13 +189,17 @@ export function buildInitCalls(params: {
     grant(B20_ROLE.UNPAUSE_ROLE, initialAdmin);
   }
 
-  const initialSupplyBaseUnits = BigInt(initialSupply || "0");
+  const initialSupplyBaseUnits = initialSupply
+    ? parseUnits(initialSupply, decimals)
+    : 0n;
   if (initialSupplyBaseUnits > 0n) {
     calls.push(encodeMintCall(initialAdmin, initialSupplyBaseUnits));
   }
 
   if (maximumSupply) {
-    calls.push(encodeUpdateSupplyCapCall(BigInt(maximumSupply)));
+    calls.push(
+      encodeUpdateSupplyCapCall(parseUnits(maximumSupply, decimals))
+    );
   }
 
   return calls;

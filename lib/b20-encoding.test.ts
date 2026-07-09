@@ -101,6 +101,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [{ role: "owner", address: ADMIN }],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
     });
@@ -111,6 +112,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [{ role: "admin", address: ADMIN }], // same address as initialAdmin
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
     });
@@ -121,6 +123,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [{ role: "admin", address: MINTER }],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
     });
@@ -134,6 +137,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [{ role: "transfer", address: MINTER }],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
     });
@@ -144,6 +148,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [{ role: "freeze", address: MINTER }],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
     });
@@ -155,6 +160,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "1000000000000000000000",
       maximumSupply: undefined,
     });
@@ -169,6 +175,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
     });
@@ -179,6 +186,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: "5000000",
     });
@@ -192,6 +200,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "1000",
       maximumSupply: "1000",
     });
@@ -208,6 +217,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
       pausable: true,
@@ -224,6 +234,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
       mintable: true,
@@ -243,6 +254,7 @@ describe("buildInitCalls", () => {
     const calls = buildInitCalls({
       roles: [{ role: "mint", address: ADMIN }],
       initialAdmin: ADMIN,
+      decimals: 0,
       initialSupply: "0",
       maximumSupply: undefined,
       mintable: true,
@@ -256,4 +268,22 @@ describe("buildInitCalls", () => {
     });
     expect(mintRoleGrants).toHaveLength(1);
   });
+
+  it("regression: scales initialSupply / maximumSupply by decimals — StepSupply.tsx's field says 'Whole units, no decimal point', but this was passing the typed value straight into BigInt() with no scaling. Typing '10000000' (ten million tokens) at 18 decimals actually minted 0.00000000000001 tokens on-chain — this is the exact bug traced from a real failed mainnet deploy.", () => {
+    const calls = buildInitCalls({
+      roles: [],
+      initialAdmin: ADMIN,
+      initialSupply: "10000000",
+      maximumSupply: "1000000000",
+      decimals: 18,
+    });
+    expect(calls).toHaveLength(2);
+    const mint = decodeFunctionData({ abi: b20TokenAbi, data: calls[0] });
+    const cap = decodeFunctionData({ abi: b20TokenAbi, data: calls[1] });
+    expect(mint.functionName).toBe("mint");
+    expect(mint.args?.[1]).toBe(10_000_000n * 10n ** 18n);
+    expect(cap.functionName).toBe("updateSupplyCap");
+    expect(cap.args?.[0]).toBe(1_000_000_000n * 10n ** 18n);
+  });
 });
+
