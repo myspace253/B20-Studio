@@ -18,7 +18,8 @@ const STEPS: {
     description: (
       <>
         <span className="text-white">Asset</span> for general issuance —
-        configurable 6–18 decimals, rebasing, on-chain event announcements.{" "}
+        configurable 6–18 decimals, a rebase multiplier, on-chain
+        announcements, and batched issuance.{" "}
         <span className="text-white">Stablecoin</span> for fiat-backed
         tokens — fixed 6 decimals and an issuer-declared currency code.
       </>

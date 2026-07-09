@@ -203,4 +203,57 @@ describe("buildInitCalls", () => {
       "updateSupplyCap"
     );
   });
+
+  it("regression: grants PAUSE_ROLE and UNPAUSE_ROLE to initialAdmin when pausable is set — previously this flag was stored in the DB and shown on the dashboard but never granted on-chain, so a 'pausable' token had nobody who could actually call pause()", () => {
+    const calls = buildInitCalls({
+      roles: [],
+      initialAdmin: ADMIN,
+      initialSupply: "0",
+      maximumSupply: undefined,
+      pausable: true,
+    });
+    expect(calls).toHaveLength(2);
+    const decodedRoles = calls.map(
+      (c) => decodeFunctionData({ abi: b20TokenAbi, data: c }).args?.[0]
+    );
+    expect(decodedRoles).toContain(B20_ROLE.PAUSE_ROLE);
+    expect(decodedRoles).toContain(B20_ROLE.UNPAUSE_ROLE);
+  });
+
+  it("regression: grants MINT_ROLE / BURN_ROLE to initialAdmin when mintable / burnable are set", () => {
+    const calls = buildInitCalls({
+      roles: [],
+      initialAdmin: ADMIN,
+      initialSupply: "0",
+      maximumSupply: undefined,
+      mintable: true,
+      burnable: true,
+    });
+    expect(calls).toHaveLength(2);
+    const decoded = calls.map((c) =>
+      decodeFunctionData({ abi: b20TokenAbi, data: c })
+    );
+    expect(decoded.every((d) => d.functionName === "grantRole")).toBe(true);
+    const grantedRoles = decoded.map((d) => d.args?.[0]);
+    expect(grantedRoles).toContain(B20_ROLE.MINT_ROLE);
+    expect(grantedRoles).toContain(B20_ROLE.BURN_ROLE);
+  });
+
+  it("does not double-grant MINT_ROLE when an explicit 'mint' role assignment already covers initialAdmin", () => {
+    const calls = buildInitCalls({
+      roles: [{ role: "mint", address: ADMIN }],
+      initialAdmin: ADMIN,
+      initialSupply: "0",
+      maximumSupply: undefined,
+      mintable: true,
+    });
+    const mintRoleGrants = calls.filter((c) => {
+      const decoded = decodeFunctionData({ abi: b20TokenAbi, data: c });
+      return (
+        decoded.functionName === "grantRole" &&
+        decoded.args?.[0] === B20_ROLE.MINT_ROLE
+      );
+    });
+    expect(mintRoleGrants).toHaveLength(1);
+  });
 });

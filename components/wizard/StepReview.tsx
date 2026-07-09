@@ -159,6 +159,9 @@ export function StepReview({
         initialAdmin,
         initialSupply: draft.supply.initialSupply,
         maximumSupply: draft.supply.maximumSupply,
+        mintable: draft.supply.mintable,
+        burnable: draft.supply.burnable,
+        pausable: draft.supply.pausable,
       });
 
       // Predict the deterministic address before sending, rather than

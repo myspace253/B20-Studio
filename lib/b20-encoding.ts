@@ -92,30 +92,49 @@ export function encodeMintCall(
 }
 
 /**
- * Maps this app's wizard role types onto real B20 roles. Not a 1:1 mapping —
- * "transfer" isn't a role at all in B20 (transfer restriction is a
- * PolicyRegistry assignment, not wired here yet), and DEFAULT_ADMIN_ROLE
- * is never re-granted for `initialAdmin` here regardless of which role
- * type carries that address (owner, or admin left equal to the deployer)
- * — it's already assigned via `initialAdmin` in the create params (see
- * StepReview.tsx), and a redundant grantRole call for the same address is
- * exactly what caused a real failed deploy on Sepolia. "admin" entries for
- * a genuinely different address still produce additional grants.
- *
  * Order matters here: mint (establishing totalSupply) happens before
  * updateSupplyCap, since a cap set below an existing supply would revert.
  * The wizard's own validation already guarantees maximumSupply >=
  * initialSupply, so this ordering is always safe given valid input.
+ *
+ * mintable / burnable / pausable mirror the wizard's Supply-step
+ * capability toggles (types/token.ts TokenSupplyConfig). Per B20's Roles
+ * Model, mint is gated by MINT_ROLE, burn by BURN_ROLE, and pause/unpause
+ * by separate PAUSE_ROLE / UNPAUSE_ROLE grants — none of these are
+ * implied by anything else in the create params, so a token deployed
+ * with pausable: true but no PAUSE_ROLE holder is not actually pausable
+ * on-chain, regardless of what the dashboard displays. These flags grant
+ * the corresponding role(s) to initialAdmin, deduplicated against any
+ * identical grant already produced by an explicit role assignment above.
  */
 export function buildInitCalls(params: {
   roles: TokenRoleAssignment[];
   initialAdmin: `0x${string}`;
   initialSupply: string;
   maximumSupply: string | undefined;
+  mintable?: boolean;
+  burnable?: boolean;
+  pausable?: boolean;
 }): `0x${string}`[] {
-  const { roles, initialAdmin, initialSupply, maximumSupply } = params;
+  const {
+    roles,
+    initialAdmin,
+    initialSupply,
+    maximumSupply,
+    mintable,
+    burnable,
+    pausable,
+  } = params;
   const calls: `0x${string}`[] = [];
   const admin = initialAdmin.toLowerCase();
+  const granted = new Set<string>(); // `${role}:${address}` already encoded
+
+  const grant = (role: `0x${string}`, address: `0x${string}`) => {
+    const key = `${role}:${address.toLowerCase()}`;
+    if (granted.has(key)) return;
+    granted.add(key);
+    calls.push(encodeGrantRoleCall(role, address));
+  };
 
   for (const { role, address } of roles) {
     if (!isAddress(address)) continue;
@@ -130,25 +149,37 @@ export function buildInitCalls(params: {
     switch (role) {
       case "owner":
       case "admin":
-        calls.push(encodeGrantRoleCall(B20_ROLE.DEFAULT_ADMIN_ROLE, address));
+        grant(B20_ROLE.DEFAULT_ADMIN_ROLE, address);
         break;
       case "mint":
-        calls.push(encodeGrantRoleCall(B20_ROLE.MINT_ROLE, address));
+        grant(B20_ROLE.MINT_ROLE, address);
         break;
       case "burn":
-        calls.push(encodeGrantRoleCall(B20_ROLE.BURN_ROLE, address));
+        grant(B20_ROLE.BURN_ROLE, address);
         break;
       case "freeze":
         // Real B20 equivalent of "freeze" is burnBlocked, gated by
         // BURN_BLOCKED_ROLE — see components/dashboard/FreezeManager.tsx
         // for the PolicyRegistry piece this still doesn't cover.
-        calls.push(encodeGrantRoleCall(B20_ROLE.BURN_BLOCKED_ROLE, address));
+        grant(B20_ROLE.BURN_BLOCKED_ROLE, address);
         break;
       case "transfer":
         // No-op: transfer gating is a PolicyRegistry policy assignment,
         // not a role. Nothing to encode here yet.
         break;
     }
+  }
+
+  // Capability toggles fall back to granting initialAdmin, so the
+  // capability the dashboard advertises is actually callable on-chain by
+  // someone. An explicit role assignment above (e.g. "mint" -> a
+  // dedicated minter address) already satisfies this and grant() dedupes
+  // against it when that address happens to be initialAdmin.
+  if (mintable) grant(B20_ROLE.MINT_ROLE, initialAdmin);
+  if (burnable) grant(B20_ROLE.BURN_ROLE, initialAdmin);
+  if (pausable) {
+    grant(B20_ROLE.PAUSE_ROLE, initialAdmin);
+    grant(B20_ROLE.UNPAUSE_ROLE, initialAdmin);
   }
 
   const initialSupplyBaseUnits = BigInt(initialSupply || "0");
