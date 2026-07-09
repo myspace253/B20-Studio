@@ -60,9 +60,10 @@ export function StepReview({
   onDeployed,
 }: StepReviewProps) {
   const { address, isConnected, chainId } = useAccount();
-  const publicClient = usePublicClient();
+  const targetChain = CHAIN_BY_NETWORK[network];
+  const publicClient = usePublicClient({ chainId: targetChain.id });
   const { switchChainAsync } = useSwitchChain();
-  const { send, status } = useB20Transaction();
+  const { send, status } = useB20Transaction(targetChain.id);
   const [stepError, setStepError] = useState<string | null>(null);
   const [phase, setPhase] = useState<
     | "idle"
@@ -73,7 +74,6 @@ export function StepReview({
     | "persisting"
   >("idle");
 
-  const targetChain = CHAIN_BY_NETWORK[network];
   const busy = phase !== "idle";
 
   const handleDeploy = async () => {

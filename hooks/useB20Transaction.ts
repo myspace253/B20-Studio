@@ -20,10 +20,20 @@ export type B20TxStatus = "idle" | "signing" | "confirming" | "success" | "error
  * action (deploy, mint, burn, freeze) reports the same real, on-chain gas
  * numbers instead of each page reimplementing this. The wallet signs and
  * pays gas — this hook never touches a private key.
+ *
+ * chainId is required, not inferred from the wallet's current chain.
+ * usePublicClient() with no chainId returns whatever chain the wallet was
+ * on when this hook last rendered — if a caller switches chains inside
+ * the same async flow (StepReview.tsx does, right before deploying),
+ * that value doesn't update mid-function. writeContractAsync still signs
+ * against the right chain (it takes an explicit chainId in its config),
+ * but waitForTransactionReceipt would then poll the *old* chain for a
+ * hash that only exists on the new one — it never finds it, and the
+ * whole deploy reports as failed even though it succeeded on-chain.
  */
-export function useB20Transaction() {
+export function useB20Transaction(chainId: number) {
   const { writeContractAsync } = useWriteContract();
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({ chainId });
   const [status, setStatus] = useState<B20TxStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<B20TxResult | null>(null);

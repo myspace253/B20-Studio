@@ -21,7 +21,8 @@ export function MintForm({ contractAddress, decimals, network }: MintFormProps) 
   const { id } = useParams<{ id: string }>();
   const { chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
-  const { send, status } = useB20Transaction();
+  const targetChain = CHAIN_BY_NETWORK[network];
+  const { send, status } = useB20Transaction(targetChain.id);
 
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
@@ -29,7 +30,6 @@ export function MintForm({ contractAddress, decimals, network }: MintFormProps) 
     null
   );
 
-  const targetChain = CHAIN_BY_NETWORK[network];
   const busy = status === "signing" || status === "confirming";
 
   const handleSubmit = async (e: React.FormEvent) => {
