@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useAccount, usePublicClient, useSwitchChain } from "wagmi";
 import { base, baseSepolia } from "wagmi/chains";
-import { keccak256, toHex } from "viem";
+import { keccak256, toHex, encodeFunctionData } from "viem";
 import type { CreateTokenDraft } from "@/types/token";
 import type { DeployNetwork } from "@/lib/store/tokenDraft";
 import { useB20Transaction } from "@/hooks/useB20Transaction";
+import { useVanityAddress } from "@/hooks/useVanityAddress";
 import {
   b20FactoryAbi,
   activationRegistryAbi,
@@ -76,6 +77,14 @@ export function StepReview({
 
   const busy = phase !== "idle";
 
+  const variant =
+    draft.supply.variant === "stablecoin"
+      ? B20_VARIANT.stablecoin
+      : B20_VARIANT.asset;
+
+  const [vanitySuffix, setVanitySuffix] = useState("");
+  const vanity = useVanityAddress(publicClient, variant, address);
+
   const handleDeploy = async () => {
     setStepError(null);
 
@@ -118,11 +127,6 @@ export function StepReview({
         return;
       }
 
-      const variant =
-        draft.supply.variant === "stablecoin"
-          ? B20_VARIANT.stablecoin
-          : B20_VARIANT.asset;
-
       // The Permissions step's "Owner" becomes initialAdmin — B20 assigns
       // DEFAULT_ADMIN_ROLE this way at creation, not via a separate role
       // grant. Falling back to the connected wallet only covers the
@@ -130,14 +134,17 @@ export function StepReview({
       const ownerRole = draft.roles.find((r) => r.role === "owner");
       const initialAdmin = (ownerRole?.address as `0x${string}` | undefined) ?? address;
 
-      // Fresh salt per attempt — createB20's address is deterministic on
-      // (variant, sender, salt), so reusing a salt after a prior success
-      // reverts with TokenAlreadyExists.
-      const salt = keccak256(
-        toHex(
-          `${draft.basicInfo.symbol}-${address}-${Date.now()}-${Math.random()}`
-        )
-      );
+      // Use the vanity-search salt if the user found and kept one —
+      // otherwise fresh salt per attempt, since createB20's address is
+      // deterministic on (variant, sender, salt) and reusing a salt after
+      // a prior success reverts with TokenAlreadyExists.
+      const salt =
+        vanity.match?.salt ??
+        keccak256(
+          toHex(
+            `${draft.basicInfo.symbol}-${address}-${Date.now()}-${Math.random()}`
+          )
+        );
 
       const params =
         draft.supply.variant === "stablecoin"
@@ -173,6 +180,35 @@ export function StepReview({
         functionName: "getB20Address",
         args: [variant, address, salt],
       });
+
+      // Integrity check, not a formality: a real deploy from this wizard
+      // reverted on-chain with "ABI decoding failed: buffer overrun while
+      // deserializing" — the precompile's Rust ABI decoder ran off the end
+      // of the calldata buffer. Byte-diffing the actual on-chain calldata
+      // against a clean re-encode of the identical (variant, salt, params,
+      // initCalls) showed the transmitted calldata was exactly 1 byte
+      // short of a valid 32-byte word boundary, inside the zero-padding
+      // of a dynamic string field. This wizard's own encoding functions
+      // (buildInitCalls, encodeAssetCreateParams) produce correct,
+      // byte-perfect output for those exact inputs when re-run directly —
+      // so the corruption happened somewhere between building these args
+      // and broadcast (a stale bundle, or a wallet/RPC layer treating the
+      // hex calldata as a number and dropping a trailing zero byte).
+      // Independently re-encoding here with the same args and asserting
+      // word-alignment catches that class of corruption before the wallet
+      // is even asked to sign, instead of silently wasting gas on a
+      // guaranteed revert with an opaque error.
+      const encodedCalldata = encodeFunctionData({
+        abi: b20FactoryAbi,
+        functionName: "createB20",
+        args: [variant, salt, params, initCalls],
+      });
+      const bodyLength = (encodedCalldata.length - 2) / 2 - 4; // strip "0x" + 4-byte selector
+      if (bodyLength % 32 !== 0) {
+        throw new Error(
+          `Calldata integrity check failed: body is ${bodyLength} bytes, not a multiple of 32. This would revert on-chain with "ABI decoding failed" — refusing to send. Please retry; if this persists, report it.`
+        );
+      }
 
       setPhase("awaiting-signature");
       const result = await send({
@@ -299,6 +335,80 @@ export function StepReview({
           <p className="mt-2 text-xs text-danger">
             This is a real transaction using real ETH for gas. Test on
             Sepolia first.
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-medium text-white">
+          Vanity address <span className="text-fog">(optional)</span>
+        </h2>
+        <p className="mb-3 text-xs text-fog">
+          Only the last 9 bytes of a B20 address are derived from the salt
+          — every token of this variant shares the same leading bytes — so
+          this searches for an <em>ending</em>, not a full custom address.
+        </p>
+        {!isConnected ? (
+          <p className="text-xs text-fog">Connect a wallet to search.</p>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2">
+              <span className="font-mono text-sm text-fog">…</span>
+              <input
+                type="text"
+                value={vanitySuffix}
+                onChange={(e) =>
+                  setVanitySuffix(
+                    e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6)
+                  )
+                }
+                placeholder="c0ffee"
+                disabled={vanity.status === "searching" || busy}
+                className="w-28 bg-transparent font-mono text-sm text-white placeholder:text-fog focus:outline-none"
+              />
+            </div>
+            {vanity.status === "searching" ? (
+              <button
+                type="button"
+                onClick={vanity.cancel}
+                className="rounded-md border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-fog hover:text-white"
+              >
+                Stop ({vanity.attempts} checked)
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => vanity.search(vanitySuffix)}
+                disabled={!vanitySuffix || busy}
+                className="rounded-md border border-line px-4 py-2 text-sm font-medium text-muted transition-colors hover:border-fog hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Search
+              </button>
+            )}
+            {vanity.match && (
+              <button
+                type="button"
+                onClick={vanity.reset}
+                className="text-xs text-fog underline hover:text-white"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        )}
+        {vanity.status === "found" && vanity.match && (
+          <p className="mt-3 font-mono text-sm text-signal">
+            {vanity.match.address} — found in {vanity.match.attempts} tries
+          </p>
+        )}
+        {vanity.status === "not-found" && (
+          <p className="mt-3 text-xs text-danger">
+            No match after 2,000 tries — try a shorter ending.
+          </p>
+        )}
+        {vanity.status === "error" && (
+          <p className="mt-3 text-xs text-danger">
+            Enter 1–6 hex characters (0–9, a–f).
           </p>
         )}
       </section>
