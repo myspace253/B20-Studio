@@ -12,6 +12,17 @@ export const B20_FACTORY_ADDRESS =
 export const ACTIVATION_REGISTRY_ADDRESS =
   "0x8453000000000000000000000000000000000001" as const;
 
+/**
+ * Singleton PolicyRegistry precompile — manages the allowlist/blocklist
+ * policies B20 tokens reference by uint64 ID for transfer/mint gating.
+ * Not wired into any transfer-rules UI yet (see StepTransferRules.tsx /
+ * FreezeManager.tsx) — this is just the address, so that work has
+ * something correct to build on rather than a hardcoded string.
+ * Source: https://docs.base.org/base-chain/specs/upgrades/beryl/b20#policy-registry
+ */
+export const POLICY_REGISTRY_ADDRESS =
+  "0x8453000000000000000000000000000000000002" as const;
+
 /** Matches IB20Factory.B20Variant enum ordering exactly (ASSET = 0, STABLECOIN = 1). */
 export const B20_VARIANT = { asset: 0, stablecoin: 1 } as const;
 
@@ -76,6 +87,13 @@ export const b20FactoryAbi = [
   {
     type: "function",
     name: "isB20",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "isB20Initialized",
     stateMutability: "view",
     inputs: [{ name: "token", type: "address" }],
     outputs: [{ name: "", type: "bool" }],

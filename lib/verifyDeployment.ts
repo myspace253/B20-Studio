@@ -41,14 +41,19 @@ export async function verifyB20Deployment(params: {
     return { ok: false, reason: "Transaction was not sent to the B20 factory." };
   }
 
-  const isB20 = await client.readContract({
+  // isB20 (not used here) only confirms the address is B20-shaped — per
+  // the docs, the variant is "recoverable from the address alone without
+  // an RPC call," which means isB20 can pass for an address that was
+  // never actually created. isB20Initialized is the one that checks real
+  // deployment state, which is what this function claims to verify.
+  const isInitialized = await client.readContract({
     address: B20_FACTORY_ADDRESS,
     abi: b20FactoryAbi,
-    functionName: "isB20",
+    functionName: "isB20Initialized",
     args: [params.contractAddress],
   });
 
-  if (!isB20) {
+  if (!isInitialized) {
     return { ok: false, reason: "Reported address is not a real B20 token." };
   }
 
