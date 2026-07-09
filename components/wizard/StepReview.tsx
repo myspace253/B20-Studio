@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAccount, usePublicClient, useSwitchChain } from "wagmi";
-import { base, baseSepolia } from "wagmi/chains";
+import { base, baseSepolia } from "viem/chains";
 import { keccak256, toHex, encodeFunctionData } from "viem";
 import type { CreateTokenDraft } from "@/types/token";
 import type { DeployNetwork } from "@/lib/store/tokenDraft";
