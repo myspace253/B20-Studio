@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useWriteContract, usePublicClient } from "wagmi";
 import { formatGwei, formatEther } from "viem";
 import type { WriteContractParameters } from "wagmi/actions";
+import { decodeRevertReason } from "@/lib/b20-errors";
 
 export interface B20TxResult {
   txHash: `0x${string}`;
@@ -51,7 +52,15 @@ export function useB20Transaction(chainId: number) {
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
         if (receipt.status !== "success") {
-          throw new Error("Transaction reverted on-chain.");
+          if (!publicClient) throw new Error("Transaction reverted on-chain.");
+          const tx = await publicClient.getTransaction({ hash });
+          const reason = await decodeRevertReason(publicClient, {
+            to: tx.to as `0x${string}`,
+            data: tx.input,
+            from: tx.from,
+            blockNumber: receipt.blockNumber,
+          });
+          throw new Error(reason);
         }
 
         const gasUsed = receipt.gasUsed;

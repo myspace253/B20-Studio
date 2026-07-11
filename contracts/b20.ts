@@ -100,6 +100,71 @@ export const b20FactoryAbi = [
   },
 ] as const;
 
+/**
+ * Named B20/ActivationRegistry revert reasons referenced across Base's
+ * docs (docs.base.org/base-chain/specs/upgrades/beryl/b20 and the
+ * launch-b20-token quickstart). Base doesn't publish the exact Solidity
+ * error signatures (arg types) anywhere public as of this writing — these
+ * are best-effort reconstructions from the documented revert conditions
+ * (e.g. "reverts with InvalidSupplyCap if newCap is below current
+ * totalSupply or above type(uint128).max" implies two uint256 args).
+ *
+ * If an arg type here is wrong, the computed 4-byte selector won't match
+ * the real one and decodeErrorResult will simply fail to recognize it —
+ * that's a safe failure mode (falls back to showing the raw selector),
+ * not a wrong diagnosis. Update the corresponding entry here once you
+ * observe a real revert and confirm the actual signature.
+ */
+export const b20ErrorsAbi = [
+  {
+    type: "error",
+    name: "FeatureNotActivated",
+    inputs: [{ name: "feature", type: "bytes32" }],
+  },
+  {
+    type: "error",
+    name: "TokenAlreadyExists",
+    inputs: [{ name: "token", type: "address" }],
+  },
+  { type: "error", name: "AbiDecodeFailed", inputs: [] },
+  {
+    type: "error",
+    name: "InvalidSupplyCap",
+    inputs: [
+      { name: "newSupplyCap", type: "uint256" },
+      { name: "totalSupply", type: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "SupplyCapExceeded",
+    inputs: [
+      { name: "attempted", type: "uint256" },
+      { name: "cap", type: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "PolicyForbids",
+    inputs: [
+      { name: "policyId", type: "uint64" },
+      { name: "account", type: "address" },
+    ],
+  },
+  { type: "error", name: "LastAdminCannotRenounce", inputs: [] },
+  {
+    type: "error",
+    name: "AccessControlUnauthorizedAccount",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "neededRole", type: "bytes32" },
+    ],
+  },
+  { type: "error", name: "InvalidDecimals", inputs: [{ name: "decimals", type: "uint8" }] },
+  { type: "error", name: "InvalidCurrency", inputs: [] },
+  { type: "error", name: "InternalCallFailed", inputs: [] },
+] as const;
+
 /** IB20.sol — only the entry points this app calls on a deployed token. */
 export const b20TokenAbi = [
   {

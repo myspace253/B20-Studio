@@ -21,6 +21,7 @@ import {
   encodeStablecoinCreateParams,
   buildInitCalls,
 } from "@/lib/b20-encoding";
+import { simulateB20Call } from "@/lib/b20-errors";
 
 export interface DeployedResult {
   contractAddress: `0x${string}`;
@@ -210,6 +211,19 @@ export function StepReview({
         throw new Error(
           `Calldata integrity check failed: body is ${bodyLength} bytes, not a multiple of 32. This would revert on-chain with "ABI decoding failed" — refusing to send. Please retry; if this persists, report it.`
         );
+      }
+
+      // Real-state simulation, not just a structural check — this is what
+      // should have surfaced "FeatureNotActivated" or "TokenAlreadyExists"
+      // directly instead of a mined, gas-spent revert requiring manual
+      // decoding to diagnose after the fact.
+      const revertReason = await simulateB20Call(publicClient, {
+        to: B20_FACTORY_ADDRESS,
+        data: encodedCalldata,
+        from: address,
+      });
+      if (revertReason) {
+        throw new Error(revertReason);
       }
 
       setPhase("awaiting-signature");

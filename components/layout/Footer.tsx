@@ -22,8 +22,8 @@ const RESOURCE_LINKS = [
 // as a small config array so this stays a one-line edit.
 const ALSO_BUILDING: { name: string; blurb: string; href: string }[] = [
   {
-    name: "B20-Studio",
-    blurb: "https://production-b20-studio.tyzo.nodeops.app/",
+    name: "Your other project",
+    blurb: "Add a link here",
     href: "#",
   },
 ];
