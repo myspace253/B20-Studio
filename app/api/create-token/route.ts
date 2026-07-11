@@ -21,6 +21,7 @@ const createTokenSchema = z.object({
     twitter: z.string().url().optional().or(z.literal("")),
     telegram: z.string().url().optional().or(z.literal("")),
     discord: z.string().url().optional().or(z.literal("")),
+    logoUrl: z.string().url().optional().or(z.literal("")),
   }),
   supply: z.object({
     variant: z.enum(["asset", "stablecoin"]),
@@ -154,6 +155,7 @@ export async function POST(req: NextRequest) {
             twitter: basicInfo.twitter || undefined,
             telegram: basicInfo.telegram || undefined,
             discord: basicInfo.discord || undefined,
+            logoUrl: basicInfo.logoUrl || undefined,
           },
         },
         transferRule: {

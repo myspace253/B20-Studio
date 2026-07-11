@@ -141,6 +141,16 @@ export const b20TokenAbi = [
   },
   {
     type: "function",
+    name: "revokeRole",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "role", type: "bytes32" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "updateSupplyCap",
     stateMutability: "nonpayable",
     inputs: [{ name: "newSupplyCap", type: "uint256" }],
@@ -161,6 +171,47 @@ export const b20TokenAbi = [
     name: "balanceOf",
     stateMutability: "view",
     inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "hasRole",
+    stateMutability: "view",
+    inputs: [
+      { name: "role", type: "bytes32" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  // Standard ERC-20 reads — B20 is a superset of ERC-20 (same selectors),
+  // so these work against any deployed B20 token exactly like a normal
+  // ERC-20 contract. Used by the token lookup tool.
+  {
+    type: "function",
+    name: "name",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "symbol",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+  },
+  {
+    type: "function",
+    name: "totalSupply",
+    stateMutability: "view",
+    inputs: [],
     outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;

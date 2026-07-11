@@ -78,6 +78,17 @@ export function encodeUpdateSupplyCapCall(cap: bigint): `0x${string}` {
   });
 }
 
+export function encodeRevokeRoleCall(
+  role: `0x${string}`,
+  account: `0x${string}`
+): `0x${string}` {
+  return encodeFunctionData({
+    abi: b20TokenAbi,
+    functionName: "revokeRole",
+    args: [role, account],
+  });
+}
+
 /**
  * B20's create params (B20AssetCreateParams / B20StablecoinCreateParams)
  * have no initial-supply field — createB20 only sets metadata and admin.
@@ -193,7 +204,29 @@ export function buildInitCalls(params: {
     ? parseUnits(initialSupply, decimals)
     : 0n;
   if (initialSupplyBaseUnits > 0n) {
+    // mint() is gated by MINT_ROLE — it is NOT implied by DEFAULT_ADMIN_ROLE.
+    // If nobody has been granted MINT_ROLE yet (no explicit "mint" role
+    // assignment above, and "mintable" is unchecked), this mint call would
+    // be dispatched with no holder of MINT_ROLE and revert on-chain, taking
+    // the whole atomic createB20 down with it and failing the deploy — even
+    // though every other input was valid. This was a real gap: the
+    // capability toggles above only grant MINT_ROLE when "mintable" is
+    // true, but the bootstrap mint is unconditional on initialSupply > 0.
+    // Grant it here if still missing, then revoke it immediately after if
+    // the issuer didn't actually want the token mintable long-term, so the
+    // final on-chain state still matches the "mintable: false" the wizard
+    // shows.
+    const mintRoleKey = `${B20_ROLE.MINT_ROLE}:${admin}`;
+    const mintRoleAlreadyIntended = granted.has(mintRoleKey);
+    if (!mintRoleAlreadyIntended) {
+      grant(B20_ROLE.MINT_ROLE, initialAdmin);
+    }
+
     calls.push(encodeMintCall(initialAdmin, initialSupplyBaseUnits));
+
+    if (!mintRoleAlreadyIntended && !mintable) {
+      calls.push(encodeRevokeRoleCall(B20_ROLE.MINT_ROLE, initialAdmin));
+    }
   }
 
   if (maximumSupply) {

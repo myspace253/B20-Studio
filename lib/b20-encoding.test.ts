@@ -164,11 +164,13 @@ describe("buildInitCalls", () => {
       initialSupply: "1000000000000000000000",
       maximumSupply: undefined,
     });
-    expect(calls).toHaveLength(1);
-    const decoded = decodeFunctionData({ abi: b20TokenAbi, data: calls[0] });
-    expect(decoded.functionName).toBe("mint");
-    expect((decoded.args?.[0] as string).toLowerCase()).toBe(ADMIN);
-    expect(decoded.args?.[1]).toBe(1000000000000000000000n);
+    // grantRole(MINT_ROLE) -> mint -> revokeRole(MINT_ROLE), since mintable
+    // wasn't requested here — see the bootstrap-mint regression tests below.
+    expect(calls).toHaveLength(3);
+    const decoded = calls.map((c) => decodeFunctionData({ abi: b20TokenAbi, data: c }));
+    expect(decoded[1].functionName).toBe("mint");
+    expect((decoded[1].args?.[0] as string).toLowerCase()).toBe(ADMIN);
+    expect(decoded[1].args?.[1]).toBe(1000000000000000000000n);
   });
 
   it("does not emit a mint call when initial supply is zero", () => {
@@ -203,12 +205,14 @@ describe("buildInitCalls", () => {
       decimals: 0,
       initialSupply: "1000",
       maximumSupply: "1000",
+      mintable: true, // avoids the grant/revoke bracketing tested separately below
     });
-    expect(calls).toHaveLength(2);
-    expect(decodeFunctionData({ abi: b20TokenAbi, data: calls[0] }).functionName).toBe(
+    // grantRole(MINT_ROLE) from the "mintable" toggle, then mint, then cap.
+    expect(calls).toHaveLength(3);
+    expect(decodeFunctionData({ abi: b20TokenAbi, data: calls[1] }).functionName).toBe(
       "mint"
     );
-    expect(decodeFunctionData({ abi: b20TokenAbi, data: calls[1] }).functionName).toBe(
+    expect(decodeFunctionData({ abi: b20TokenAbi, data: calls[2] }).functionName).toBe(
       "updateSupplyCap"
     );
   });
@@ -269,6 +273,63 @@ describe("buildInitCalls", () => {
     expect(mintRoleGrants).toHaveLength(1);
   });
 
+  it("regression: bootstrap-mints when initialSupply > 0 even if 'mintable' is unchecked and no explicit mint role was assigned — mint() is gated by MINT_ROLE (not DEFAULT_ADMIN_ROLE), so without this the mint call in the same atomic createB20 batch reverts with no MINT_ROLE holder, failing the entire deploy", () => {
+    const calls = buildInitCalls({
+      roles: [],
+      initialAdmin: ADMIN,
+      decimals: 18,
+      initialSupply: "1000000",
+      maximumSupply: undefined,
+      mintable: false,
+    });
+    const decoded = calls.map((c) => decodeFunctionData({ abi: b20TokenAbi, data: c }));
+    const grantIdx = decoded.findIndex(
+      (d) => d.functionName === "grantRole" && d.args?.[0] === B20_ROLE.MINT_ROLE
+    );
+    const mintIdx = decoded.findIndex((d) => d.functionName === "mint");
+    const revokeIdx = decoded.findIndex(
+      (d) => d.functionName === "revokeRole" && d.args?.[0] === B20_ROLE.MINT_ROLE
+    );
+    // MINT_ROLE must be granted before the mint call...
+    expect(grantIdx).toBeGreaterThanOrEqual(0);
+    expect(mintIdx).toBeGreaterThan(grantIdx);
+    // ...and revoked afterward, since mintable is false and this grant was
+    // only for bootstrap purposes — the final on-chain state should match
+    // "not mintable" the way the wizard displays it.
+    expect(revokeIdx).toBeGreaterThan(mintIdx);
+  });
+
+  it("does not revoke MINT_ROLE after the bootstrap mint when 'mintable' is true — the grant is intentional and permanent", () => {
+    const calls = buildInitCalls({
+      roles: [],
+      initialAdmin: ADMIN,
+      decimals: 18,
+      initialSupply: "1000000",
+      maximumSupply: undefined,
+      mintable: true,
+    });
+    const decoded = calls.map((c) => decodeFunctionData({ abi: b20TokenAbi, data: c }));
+    expect(decoded.some((d) => d.functionName === "revokeRole")).toBe(false);
+    // Exactly one MINT_ROLE grant, not one from the toggle and a second from bootstrap.
+    const mintGrants = decoded.filter(
+      (d) => d.functionName === "grantRole" && d.args?.[0] === B20_ROLE.MINT_ROLE
+    );
+    expect(mintGrants).toHaveLength(1);
+  });
+
+  it("does not revoke MINT_ROLE after the bootstrap mint when an explicit 'mint' role assignment already covers initialAdmin", () => {
+    const calls = buildInitCalls({
+      roles: [{ role: "mint", address: ADMIN }],
+      initialAdmin: ADMIN,
+      decimals: 18,
+      initialSupply: "1000000",
+      maximumSupply: undefined,
+      mintable: false,
+    });
+    const decoded = calls.map((c) => decodeFunctionData({ abi: b20TokenAbi, data: c }));
+    expect(decoded.some((d) => d.functionName === "revokeRole")).toBe(false);
+  });
+
   it("regression: scales initialSupply / maximumSupply by decimals — StepSupply.tsx's field says 'Whole units, no decimal point', but this was passing the typed value straight into BigInt() with no scaling. Typing '10000000' (ten million tokens) at 18 decimals actually minted 0.00000000000001 tokens on-chain — this is the exact bug traced from a real failed mainnet deploy.", () => {
     const calls = buildInitCalls({
       roles: [],
@@ -276,13 +337,12 @@ describe("buildInitCalls", () => {
       initialSupply: "10000000",
       maximumSupply: "1000000000",
       decimals: 18,
+      mintable: true, // avoids the grant/revoke bracketing tested separately below
     });
-    expect(calls).toHaveLength(2);
-    const mint = decodeFunctionData({ abi: b20TokenAbi, data: calls[0] });
-    const cap = decodeFunctionData({ abi: b20TokenAbi, data: calls[1] });
-    expect(mint.functionName).toBe("mint");
+    const decoded = calls.map((c) => decodeFunctionData({ abi: b20TokenAbi, data: c }));
+    const mint = decoded.find((d) => d.functionName === "mint")!;
+    const cap = decoded.find((d) => d.functionName === "updateSupplyCap")!;
     expect(mint.args?.[1]).toBe(10_000_000n * 10n ** 18n);
-    expect(cap.functionName).toBe("updateSupplyCap");
     expect(cap.args?.[0]).toBe(1_000_000_000n * 10n ** 18n);
   });
 });

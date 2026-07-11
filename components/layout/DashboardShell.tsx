@@ -1,5 +1,6 @@
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { Sidebar } from "./Sidebar";
+import { Footer } from "./Footer";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +15,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           />
         </header>
         <main className="flex-1 px-8 py-8">{children}</main>
+        <Footer />
       </div>
     </div>
   );

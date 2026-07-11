@@ -11,6 +11,7 @@ const NAV_SECTIONS = [
       { href: "/dashboard", label: "Overview" },
       { href: "/dashboard/create", label: "Create token" },
       { href: "/dashboard/tokens", label: "My tokens" },
+      { href: "/dashboard/lookup", label: "Look up" },
       { href: "/dashboard/templates", label: "Templates" },
     ],
   },

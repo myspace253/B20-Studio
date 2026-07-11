@@ -19,6 +19,7 @@ export const basicInfoSchema = z.object({
   twitter: z.string().url("Enter a valid URL").optional().or(z.literal("")),
   telegram: z.string().url("Enter a valid URL").optional().or(z.literal("")),
   discord: z.string().url("Enter a valid URL").optional().or(z.literal("")),
+  logoUrl: z.string().url("Upload an image first").optional().or(z.literal("")),
 });
 
 export type BasicInfoFormValues = z.infer<typeof basicInfoSchema>;

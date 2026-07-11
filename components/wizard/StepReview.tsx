@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAccount, usePublicClient, useSwitchChain } from "wagmi";
-import { base, baseSepolia } from "viem/chains";
+import { base, baseSepolia } from "wagmi/chains";
 import { keccak256, toHex, encodeFunctionData } from "viem";
 import type { CreateTokenDraft } from "@/types/token";
 import type { DeployNetwork } from "@/lib/store/tokenDraft";
@@ -102,9 +102,11 @@ export function StepReview({
       if (!publicClient) throw new Error("No RPC client available.");
 
       // Confirm the feature is actually activated before asking for a
-      // signature. Base delayed B20's mainnet activation after Beryl
-      // shipped, so this can legitimately return false on mainnet even
-      // though Sepolia and Vibenet are live — check rather than assume.
+      // signature. B20 mainnet activation went live July 8, 2026 (after
+      // being delayed twice for network stability), so this should now
+      // return true on mainnet as well as Sepolia/Vibenet — but check
+      // rather than assume, in case a specific variant lags or a future
+      // incident causes another rollback.
       setPhase("checking-activation");
       const featureId =
         draft.supply.variant === "stablecoin"
@@ -121,7 +123,7 @@ export function StepReview({
         setPhase("idle");
         setStepError(
           network === "base-mainnet"
-            ? "B20 isn't activated on Base Mainnet yet — activation was delayed after a stability incident. Deploy to Base Sepolia instead."
+            ? "B20 isn't activated on Base Mainnet for this variant right now — try Base Sepolia, or check Base's status page."
             : "B20 isn't activated on this network yet."
         );
         return;
@@ -249,6 +251,14 @@ export function StepReview({
     <div className="max-w-2xl space-y-8">
       <section>
         <h2 className="mb-2 text-sm font-medium text-white">Token</h2>
+        {draft.basicInfo.logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element -- external R2 URL, not worth next/image config for a scaffold
+          <img
+            src={draft.basicInfo.logoUrl}
+            alt=""
+            className="mb-3 h-12 w-12 rounded-sm border border-line object-cover"
+          />
+        )}
         <Row label="Name" value={draft.basicInfo.name} />
         <Row label="Symbol" value={draft.basicInfo.symbol} />
         <Row label="Variant" value={draft.supply.variant} />
