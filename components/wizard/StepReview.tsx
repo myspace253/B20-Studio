@@ -7,7 +7,7 @@ import { keccak256, toHex, encodeFunctionData } from "viem";
 import type { CreateTokenDraft } from "@/types/token";
 import type { DeployNetwork } from "@/lib/store/tokenDraft";
 import { useB20Transaction } from "@/hooks/useB20Transaction";
-import { useVanityAddress } from "@/hooks/useVanityAddress";
+import { useVanityAddress, estimateVanityAttempts } from "@/hooks/useVanityAddress";
 import {
   b20FactoryAbi,
   activationRegistryAbi,
@@ -420,6 +420,22 @@ export function StepReview({
             )}
           </div>
         )}
+        {/* Set expectations before a search fails, not just after — each
+            hex character is a 1-in-16 shot, so difficulty grows fast. */}
+        {isConnected && vanitySuffix && vanity.status !== "searching" && (
+          <p className="mt-2 text-xs text-fog">
+            {estimateVanityAttempts(vanitySuffix.length) > vanity.maxAttempts ? (
+              <span className="text-danger">
+                ~{estimateVanityAttempts(vanitySuffix.length).toLocaleString()}{" "}
+                tries expected for {vanitySuffix.length} character
+                {vanitySuffix.length > 1 ? "s" : ""} — beyond what a search
+                can finish. Try 4 characters or fewer.
+              </span>
+            ) : (
+              `~${estimateVanityAttempts(vanitySuffix.length).toLocaleString()} tries expected for ${vanitySuffix.length} character${vanitySuffix.length > 1 ? "s" : ""}.`
+            )}
+          </p>
+        )}
         {vanity.status === "found" && vanity.match && (
           <p className="mt-3 font-mono text-sm text-signal">
             {vanity.match.address} — found in {vanity.match.attempts} tries
@@ -427,7 +443,8 @@ export function StepReview({
         )}
         {vanity.status === "not-found" && (
           <p className="mt-3 text-xs text-danger">
-            No match after 2,000 tries — try a shorter ending.
+            No match after {vanity.maxAttempts.toLocaleString()} tries — try a
+            shorter ending.
           </p>
         )}
         {vanity.status === "error" && (

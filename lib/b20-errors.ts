@@ -1,5 +1,7 @@
 import {
   decodeErrorResult,
+  BaseError,
+  RawContractError,
   type Address,
   type Hex,
   type PublicClient,
@@ -30,6 +32,18 @@ const FRIENDLY_MESSAGES: Record<string, (args: readonly unknown[]) => string> = 
   InternalCallFailed: () => "A call inside announce() failed.",
 };
 
+function friendlyFromRevertData(raw: Hex): string {
+  try {
+    const decoded = decodeErrorResult({ abi: combinedAbi, data: raw });
+    const friendly = FRIENDLY_MESSAGES[decoded.errorName];
+    return friendly
+      ? friendly(decoded.args ?? [])
+      : `${decoded.errorName}(${(decoded.args ?? []).join(", ")})`;
+  } catch {
+    return `unrecognized error (selector ${raw.slice(0, 10)})`;
+  }
+}
+
 /**
  * Replays a transaction's exact call at the block right before it landed
  * and tries to decode the revert into a human-readable reason, instead of
@@ -56,22 +70,13 @@ export async function decodeRevertReason(
     // simulation and the real mined block (e.g. another tx landed first).
     return "Transaction reverted on-chain, but replaying the call one block earlier succeeded — likely a race with another transaction (e.g. the salt or address became taken in between). Try again.";
   } catch (err) {
-    const raw = extractRevertData(err);
+    const raw = extractRevertData(err, params.data);
     if (!raw) {
       return err instanceof Error
         ? `Transaction reverted on-chain: ${err.message}`
         : "Transaction reverted on-chain (no revert data available from the RPC).";
     }
-    try {
-      const decoded = decodeErrorResult({ abi: combinedAbi, data: raw });
-      const friendly = FRIENDLY_MESSAGES[decoded.errorName];
-      const detail = friendly
-        ? friendly(decoded.args ?? [])
-        : `${decoded.errorName}(${(decoded.args ?? []).join(", ")})`;
-      return `Reverted: ${detail}`;
-    } catch {
-      return `Transaction reverted on-chain with an unrecognized error (selector ${raw.slice(0, 10)}). Report this selector so it can be added to the known error list.`;
-    }
+    return `Reverted: ${friendlyFromRevertData(raw)}`;
   }
 }
 
@@ -90,42 +95,51 @@ export async function simulateB20Call(
     await publicClient.call({ to: params.to, data: params.data, account: params.from });
     return null;
   } catch (err) {
-    const raw = extractRevertData(err);
+    const raw = extractRevertData(err, params.data);
     if (!raw) {
       return err instanceof Error
         ? `Simulated call reverted: ${err.message}`
         : "Simulated call reverted (no revert data available from the RPC).";
     }
-    try {
-      const decoded = decodeErrorResult({ abi: combinedAbi, data: raw });
-      const friendly = FRIENDLY_MESSAGES[decoded.errorName];
-      const detail = friendly
-        ? friendly(decoded.args ?? [])
-        : `${decoded.errorName}(${(decoded.args ?? []).join(", ")})`;
-      return `This would revert: ${detail}`;
-    } catch {
-      return `This would revert with an unrecognized error (selector ${raw.slice(0, 10)}).`;
-    }
+    return `This would revert: ${friendlyFromRevertData(raw)}`;
   }
 }
 
-/** Digs through viem's error cause chain for the raw revert bytes, if the RPC returned any. */
-function extractRevertData(err: unknown): Hex | undefined {
-  let current: unknown = err;
-  for (let i = 0; i < 10 && current; i++) {
-    if (
-      typeof current === "object" &&
-      current !== null &&
-      "data" in current &&
-      typeof (current as { data?: unknown }).data === "string" &&
-      (current as { data: string }).data.startsWith("0x")
-    ) {
-      return (current as { data: Hex }).data;
-    }
-    current =
-      typeof current === "object" && current !== null && "cause" in current
-        ? (current as { cause?: unknown }).cause
-        : undefined;
-  }
-  return undefined;
+/**
+ * Extracts the real revert bytes from a failed `.call()`, using viem's
+ * own typed error class rather than a loose "any object with a `.data`
+ * field" walk.
+ *
+ * That looser version was the actual bug behind a real incident: it
+ * matched on unrelated `.data` fields elsewhere in viem's error cause
+ * chain (e.g. echoed request metadata), which for one failure mode
+ * happened to be the *original call's own calldata* — so the "revert
+ * selector" shown to the user was just the createB20 function selector
+ * (0x62975e6a) misread as an error selector. That falsely made every
+ * deploy look like a guaranteed revert, which is why the wallet never
+ * even opened: the pre-send simulateB20Call check was throwing before
+ * reaching the signature step.
+ *
+ * viem's RawContractError is the class that's actually constructed from
+ * real eth_call revert output (see viem's actions/public/call.js) — only
+ * data pulled from that specific class is trustworthy. As a second,
+ * defensive layer, revert data that happens to exactly equal the
+ * original request's own calldata is also rejected outright — that can
+ * only be a misattribution, never a real revert payload.
+ */
+function extractRevertData(err: unknown, requestData: Hex): Hex | undefined {
+  const rawError =
+    err instanceof BaseError
+      ? err.walk((e) => e instanceof RawContractError)
+      : undefined;
+
+  const data =
+    rawError instanceof RawContractError && typeof rawError.data === "string"
+      ? (rawError.data as Hex)
+      : undefined;
+
+  if (!data || !data.startsWith("0x")) return undefined;
+  if (data.toLowerCase() === requestData.toLowerCase()) return undefined;
+
+  return data;
 }

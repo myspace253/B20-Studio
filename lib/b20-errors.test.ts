@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { encodeErrorResult, type PublicClient } from "viem";
+import {
+  encodeErrorResult,
+  BaseError,
+  RawContractError,
+  type PublicClient,
+} from "viem";
 import { b20ErrorsAbi } from "@/contracts/b20";
 import { decodeRevertReason, simulateB20Call } from "./b20-errors";
 
@@ -7,13 +12,21 @@ const TO = "0xB20f000000000000000000000000000000000000" as const;
 const FROM = "0x1111111111111111111111111111111111111111" as const;
 const DATA = "0x62975e6a" as const;
 
-/** Builds a fake viem PublicClient whose `call` rejects with an error carrying the given revert data nested under `.cause.data`, matching viem's real error shape. */
+/**
+ * Builds a fake viem PublicClient whose `call` rejects with a real
+ * RawContractError wrapped in a BaseError cause chain, matching what
+ * viem's actual .call() throws on a genuine revert (see
+ * viem/actions/public/call.js). A plain object with a `.data` field is
+ * NOT enough — extractRevertData deliberately requires the real class,
+ * since a looser check was the exact bug this test suite exists to catch
+ * (see the comment on extractRevertData).
+ */
 function clientThatReverts(revertData: `0x${string}` | undefined): PublicClient {
-  const call = vi.fn().mockRejectedValue(
-    revertData
-      ? { message: "execution reverted", cause: { data: revertData } }
-      : new Error("execution reverted")
-  );
+  const rawError = revertData
+    ? new RawContractError({ data: revertData })
+    : new Error("execution reverted");
+  const wrapped = new BaseError("execution reverted", { cause: rawError });
+  const call = vi.fn().mockRejectedValue(wrapped);
   return { call } as unknown as PublicClient;
 }
 
@@ -58,6 +71,20 @@ describe("simulateB20Call", () => {
     const client = clientThatReverts(undefined);
     const result = await simulateB20Call(client, { to: TO, data: DATA, from: FROM });
     expect(result).toMatch(/revert/i);
+  });
+
+  it("regression: never mistakes the original request's own calldata for revert data", async () => {
+    // Mirrors the real incident: some intermediate error object exposes
+    // a `.data` field that happens to equal the call's own calldata
+    // (e.g. echoed request metadata), NOT actual revert output. Even
+    // when this is wrapped as if it were the "real" error data, it must
+    // be rejected rather than misreported as a revert selector.
+    const misattributed = new RawContractError({ data: DATA });
+    const wrapped = new BaseError("execution reverted", { cause: misattributed });
+    const client = { call: vi.fn().mockRejectedValue(wrapped) } as unknown as PublicClient;
+    const result = await simulateB20Call(client, { to: TO, data: DATA, from: FROM });
+    // Must NOT report DATA's selector back as if it were a revert reason.
+    expect(result).not.toContain(DATA.slice(0, 10));
   });
 });
 
