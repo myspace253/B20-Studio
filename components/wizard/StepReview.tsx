@@ -67,6 +67,7 @@ export function StepReview({
   const { switchChainAsync } = useSwitchChain();
   const { send, status } = useB20Transaction(targetChain.id);
   const [stepError, setStepError] = useState<string | null>(null);
+  const [stepWarning, setStepWarning] = useState<string | null>(null);
   const [phase, setPhase] = useState<
     | "idle"
     | "switching-network"
@@ -88,6 +89,7 @@ export function StepReview({
 
   const handleDeploy = async () => {
     setStepError(null);
+    setStepWarning(null);
 
     if (!address) {
       setStepError("Connect your wallet first.");
@@ -217,13 +219,24 @@ export function StepReview({
       // should have surfaced "FeatureNotActivated" or "TokenAlreadyExists"
       // directly instead of a mined, gas-spent revert requiring manual
       // decoding to diagnose after the fact.
-      const revertReason = await simulateB20Call(publicClient, {
+      //
+      // Only a *confirmed*, decoded reason blocks the deploy. An
+      // inconclusive simulation (RPC gave no revert data at all) does NOT
+      // block — some RPC endpoints strip revert data from eth_call
+      // responses or cap eth_call gas below what a real transaction gets,
+      // and treating that as a guaranteed failure would make this
+      // pre-send check itself capable of preventing a deploy that would
+      // actually have succeeded.
+      const simResult = await simulateB20Call(publicClient, {
         to: B20_FACTORY_ADDRESS,
         data: encodedCalldata,
         from: address,
       });
-      if (revertReason) {
-        throw new Error(revertReason);
+      if (simResult?.blocking) {
+        throw new Error(simResult.message);
+      }
+      if (simResult && !simResult.blocking) {
+        setStepWarning(simResult.message);
       }
 
       setPhase("awaiting-signature");
@@ -466,6 +479,7 @@ export function StepReview({
         </p>
       )}
 
+      {stepWarning && <p className="text-sm text-warning">{stepWarning}</p>}
       {stepError && <p className="text-sm text-danger">{stepError}</p>}
 
       <div className="flex items-center justify-between border-t border-line pt-6">

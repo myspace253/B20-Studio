@@ -10,6 +10,13 @@ import { b20FactoryAbi, b20TokenAbi, b20ErrorsAbi } from "@/contracts/b20";
 
 const combinedAbi = [...b20FactoryAbi, ...b20TokenAbi, ...b20ErrorsAbi] as const;
 
+// Generous headroom above what createB20 + a handful of initCalls should
+// ever need. Passed explicitly to eth_call so a restrictive default gas
+// cap on the RPC endpoint (some providers cap eth_call well below what a
+// real, gas-estimated sendTransaction would get) can't masquerade as a
+// genuine on-chain revert.
+const SIMULATION_GAS = 5_000_000n;
+
 const FRIENDLY_MESSAGES: Record<string, (args: readonly unknown[]) => string> = {
   FeatureNotActivated: () =>
     "This B20 variant isn't activated on this network yet — check the Activation Registry before retrying.",
@@ -64,6 +71,7 @@ export async function decodeRevertReason(
       to: params.to,
       data: params.data,
       account: params.from,
+      gas: SIMULATION_GAS,
       blockNumber: params.blockNumber - 1n,
     });
     // Call succeeded when replayed — state must have shifted between
@@ -80,6 +88,25 @@ export async function decodeRevertReason(
   }
 }
 
+export interface SimulationResult {
+  /**
+   * true only when we decoded a specific, named on-chain guard (activation,
+   * already-exists, cap math, missing role, etc.) — a confirmed reason to
+   * stop before spending gas on a guaranteed failure.
+   *
+   * false when the simulated call failed but we couldn't get a decodable
+   * reason (no revert data returned by the RPC at all). That's inconclusive,
+   * not confirmed — some RPC endpoints strip revert data from eth_call
+   * responses, and a handful of providers cap eth_call gas below what a
+   * real, wallet-estimated sendTransaction would get. Treating an
+   * inconclusive simulation as a hard block would mean this pre-send check
+   * could itself prevent a deploy that would actually have succeeded — so
+   * callers should warn, not block, when this is false.
+   */
+  blocking: boolean;
+  message: string;
+}
+
 /**
  * Pre-send check: replays the exact call against current chain state
  * before asking the wallet to sign, so most reverts (activation,
@@ -90,18 +117,25 @@ export async function decodeRevertReason(
 export async function simulateB20Call(
   publicClient: PublicClient,
   params: { to: Address; data: Hex; from: Address }
-): Promise<string | null> {
+): Promise<SimulationResult | null> {
   try {
-    await publicClient.call({ to: params.to, data: params.data, account: params.from });
+    await publicClient.call({
+      to: params.to,
+      data: params.data,
+      account: params.from,
+      gas: SIMULATION_GAS,
+    });
     return null;
   } catch (err) {
     const raw = extractRevertData(err, params.data);
     if (!raw) {
-      return err instanceof Error
-        ? `Simulated call reverted: ${err.message}`
-        : "Simulated call reverted (no revert data available from the RPC).";
+      const detail = err instanceof Error ? err.message : "no revert data available from the RPC";
+      return {
+        blocking: false,
+        message: `Pre-send check couldn't confirm this would revert (${detail}) — proceeding to let you sign. If it fails on-chain, the exact reason will be decoded afterward.`,
+      };
     }
-    return `This would revert: ${friendlyFromRevertData(raw)}`;
+    return { blocking: true, message: `This would revert: ${friendlyFromRevertData(raw)}` };
   }
 }
 

@@ -37,7 +37,16 @@ describe("simulateB20Call", () => {
     expect(result).toBeNull();
   });
 
-  it("decodes a known named error into its friendly message", async () => {
+  it("passes an explicit generous gas limit, so a restrictive RPC default can't masquerade as a revert", async () => {
+    const call = vi.fn().mockResolvedValue({ data: "0x" });
+    const client = { call } as unknown as PublicClient;
+    await simulateB20Call(client, { to: TO, data: DATA, from: FROM });
+    expect(call).toHaveBeenCalledWith(
+      expect.objectContaining({ gas: expect.any(BigInt) })
+    );
+  });
+
+  it("blocks (with a friendly message) when a known named error is decoded", async () => {
     const revertData = encodeErrorResult({
       abi: b20ErrorsAbi,
       errorName: "TokenAlreadyExists",
@@ -45,10 +54,11 @@ describe("simulateB20Call", () => {
     });
     const client = clientThatReverts(revertData);
     const result = await simulateB20Call(client, { to: TO, data: DATA, from: FROM });
-    expect(result).toContain("already exists");
+    expect(result?.blocking).toBe(true);
+    expect(result?.message).toContain("already exists");
   });
 
-  it("decodes FeatureNotActivated into its friendly message", async () => {
+  it("blocks on FeatureNotActivated with a friendly message", async () => {
     const revertData = encodeErrorResult({
       abi: b20ErrorsAbi,
       errorName: "FeatureNotActivated",
@@ -56,21 +66,29 @@ describe("simulateB20Call", () => {
     });
     const client = clientThatReverts(revertData);
     const result = await simulateB20Call(client, { to: TO, data: DATA, from: FROM });
-    expect(result).toContain("isn't activated");
+    expect(result?.blocking).toBe(true);
+    expect(result?.message).toContain("isn't activated");
   });
 
-  it("falls back to the raw selector for an unrecognized error", async () => {
+  it("blocks with the raw selector for an unrecognized-but-decoded error", async () => {
     // A selector that isn't in b20ErrorsAbi at all.
     const client = clientThatReverts("0xdeadbeef");
     const result = await simulateB20Call(client, { to: TO, data: DATA, from: FROM });
-    expect(result).toContain("0xdeadbeef");
-    expect(result).toContain("unrecognized");
+    expect(result?.blocking).toBe(true);
+    expect(result?.message).toContain("0xdeadbeef");
+    expect(result?.message).toContain("unrecognized");
   });
 
-  it("falls back to a generic message when the RPC gives no revert data at all", async () => {
+  it("does NOT block when the RPC gives no revert data at all — inconclusive, not confirmed", async () => {
+    // Regression for the real incident this describes: a public RPC
+    // endpoint returned "execution reverted" with zero revert data for a
+    // call that would likely have succeeded as a real transaction. A
+    // hard block here would make this pre-send check itself capable of
+    // preventing valid deploys.
     const client = clientThatReverts(undefined);
     const result = await simulateB20Call(client, { to: TO, data: DATA, from: FROM });
-    expect(result).toMatch(/revert/i);
+    expect(result?.blocking).toBe(false);
+    expect(result?.message).toMatch(/couldn't confirm/i);
   });
 
   it("regression: never mistakes the original request's own calldata for revert data", async () => {
@@ -78,13 +96,15 @@ describe("simulateB20Call", () => {
     // a `.data` field that happens to equal the call's own calldata
     // (e.g. echoed request metadata), NOT actual revert output. Even
     // when this is wrapped as if it were the "real" error data, it must
-    // be rejected rather than misreported as a revert selector.
+    // be rejected rather than misreported as a revert selector — and
+    // since that makes it an inconclusive result, it must not block.
     const misattributed = new RawContractError({ data: DATA });
     const wrapped = new BaseError("execution reverted", { cause: misattributed });
     const client = { call: vi.fn().mockRejectedValue(wrapped) } as unknown as PublicClient;
     const result = await simulateB20Call(client, { to: TO, data: DATA, from: FROM });
+    expect(result?.blocking).toBe(false);
     // Must NOT report DATA's selector back as if it were a revert reason.
-    expect(result).not.toContain(DATA.slice(0, 10));
+    expect(result?.message).not.toContain(DATA.slice(0, 10));
   });
 });
 

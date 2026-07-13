@@ -20,6 +20,7 @@ const config: Config = {
         baseDim: "#0A2A80",  // pressed / dim state of primary accent
         signal: "#C4F135",   // activation / mint / "live" accent (electric lime)
         danger: "#FF5D5D",   // burn / freeze / destructive
+        warning: "#F5A623",  // inconclusive / needs-attention, not a hard failure
         paper: "#F4F1EA",    // rare light-mode surface, used sparingly (whitepaper export view)
       },
       fontFamily: {
